@@ -11,6 +11,10 @@ import java.util.Iterator;
  */
 public class Tuple implements Serializable {
 
+    private TupleDesc tupleDesc;
+
+    private final Field[] fields;
+    private RecordId recordId;
     private static final long serialVersionUID = 1L;
 
     /**
@@ -22,6 +26,8 @@ public class Tuple implements Serializable {
      */
     public Tuple(TupleDesc td) {
         // some code goes here
+        this.tupleDesc = td;
+        this.fields = new Field[td.numFields()];
     }
 
     /**

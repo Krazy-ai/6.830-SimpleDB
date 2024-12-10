@@ -60,6 +60,7 @@ public class Database {
     public static BufferPool resetBufferPool(int pages) {
         java.lang.reflect.Field bufferPoolF=null;
         try {
+            //反射
             bufferPoolF = Database.class.getDeclaredField("_bufferpool");
             bufferPoolF.setAccessible(true);
             bufferPoolF.set(_instance.get(), new BufferPool(pages));
