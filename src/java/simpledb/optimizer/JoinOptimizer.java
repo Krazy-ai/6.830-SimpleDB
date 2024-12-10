@@ -19,7 +19,6 @@ public class JoinOptimizer {
     final LogicalPlan p;
     final List<LogicalJoinNode> joins;
 
-
     /**
      * Constructor
      * 
