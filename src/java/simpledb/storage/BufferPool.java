@@ -9,7 +9,10 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -33,6 +36,9 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private final Integer numPages;
+    private final Map<PageId, Page> pageCache;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -40,6 +46,8 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        this.numPages = numPages;
+        this.pageCache = new ConcurrentHashMap<>();
     }
     
     public static int getPageSize() {
@@ -74,7 +82,40 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        //todo 没完成
+        long st = System.currentTimeMillis();
+        Lock lock = new ReentrantLock();
+        while (true) {
+            if (lock.tryLock()) {
+                try {
+                    // 获取到锁后，检查是否存在缓存
+                    if (!pageCache.containsKey(pid)) {
+                        if (pageCache.size() > numPages) {
+                            throw new DbException("BufferPool is full");
+                        }
+                        DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+                        Page page = dbFile.readPage(pid);
+                        pageCache.put(pid, page);
+                    }
+                }
+                 finally {
+                    lock.unlock();
+                }
+                return pageCache.get(pid);
+            } else {
+                // 如果未能获取到锁，判断是否超时
+                long now = System.currentTimeMillis();
+                if (now - st > 500) {
+                    throw new TransactionAbortedException();
+                }
+                //添加短暂的休眠，避免 CPU 过度占用
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();// 中断处理
+                }
+            }
+        }
     }
 
     /**

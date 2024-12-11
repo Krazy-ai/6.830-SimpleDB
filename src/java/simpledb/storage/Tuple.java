@@ -35,7 +35,7 @@ public class Tuple implements Serializable {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return this.tupleDesc;
     }
 
     /**
@@ -44,7 +44,7 @@ public class Tuple implements Serializable {
      */
     public RecordId getRecordId() {
         // some code goes here
-        return null;
+        return this.recordId;
     }
 
     /**
@@ -55,6 +55,7 @@ public class Tuple implements Serializable {
      */
     public void setRecordId(RecordId rid) {
         // some code goes here
+        this.recordId = rid;
     }
 
     /**
@@ -67,6 +68,7 @@ public class Tuple implements Serializable {
      */
     public void setField(int i, Field f) {
         // some code goes here
+        this.fields[i] = f;
     }
 
     /**
@@ -77,7 +79,7 @@ public class Tuple implements Serializable {
      */
     public Field getField(int i) {
         // some code goes here
-        return null;
+        return this.fields[i];
     }
 
     /**
@@ -90,7 +92,14 @@ public class Tuple implements Serializable {
      */
     public String toString() {
         // some code goes here
-        throw new UnsupportedOperationException("Implement this");
+        StringBuffer sb = new StringBuffer();
+        for (int i = 0; i < fields.length; i++) {
+            sb.append(fields[i].toString());
+            if (i != fields.length - 1) {
+                sb.append("\t");
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -100,7 +109,7 @@ public class Tuple implements Serializable {
     public Iterator<Field> fields()
     {
         // some code goes here
-        return null;
+        return Arrays.stream(fields).iterator();
     }
 
     /**
@@ -109,5 +118,6 @@ public class Tuple implements Serializable {
     public void resetTupleDesc(TupleDesc td)
     {
         // some code goes here
+        this.tupleDesc = td;
     }
 }
