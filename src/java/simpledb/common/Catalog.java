@@ -26,9 +26,9 @@ public class Catalog {
     private Map<Integer, Table> tables;
     private Map<String, Integer> nameToId;
     public class Table {
-        private DbFile file;
+        private DbFile file;//table的内容
         private String name;
-        private String pkeyField;
+        private String pkeyField;//表中主键的fieldName
 
         public Table(DbFile file, String name, String pkeyField) {
             this.file = file;

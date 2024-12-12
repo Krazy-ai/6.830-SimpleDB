@@ -318,7 +318,8 @@ public class HeapPage implements Page {
      */
     public Iterator<Tuple> iterator() {
         // some code goes here
-        //TODO 不懂
+        //tuples是间隔存储的，即有的tuples[slot]是空的，
+        //我们必须返回所有非空的tuples[slot]，因此我们不能简单的返回一个Arrays.asList(tuples).iterator()
         List<Tuple> tupleList = new ArrayList<>();
         // 将非空的槽的数据加入迭代器中
         for (int i = 0; i < numSlots; i++) {
