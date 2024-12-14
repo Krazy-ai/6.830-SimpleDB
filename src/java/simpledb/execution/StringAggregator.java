@@ -1,7 +1,14 @@
 package simpledb.execution;
 
+import simpledb.common.DbException;
 import simpledb.common.Type;
-import simpledb.storage.Tuple;
+import simpledb.storage.*;
+import simpledb.transaction.TransactionAbortedException;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Knows how to compute some aggregate over a set of StringFields.
@@ -9,6 +16,11 @@ import simpledb.storage.Tuple;
 public class StringAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
+    private int gbFieldIdx;
+    private Type gbFieldType;
+    private int aggregateFieldIdx;
+    private Op operator;
+    private final Map<Field, Integer> map;
 
     /**
      * Aggregate constructor
@@ -21,6 +33,14 @@ public class StringAggregator implements Aggregator {
 
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
         // some code goes here
+        if(what != Op.COUNT){
+            throw new IllegalArgumentException("StringAggregator only supports COUNT");
+        }
+        this.gbFieldIdx = gbfield;
+        this.gbFieldType = gbfieldtype;
+        this.aggregateFieldIdx = afield;
+        this.operator = what;
+        this.map = new HashMap<>();
     }
 
     /**
@@ -29,6 +49,12 @@ public class StringAggregator implements Aggregator {
      */
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
+        Field gbField = gbFieldIdx == Aggregator.NO_GROUPING ? null : tup.getField(gbFieldIdx);
+        if (gbField != null && !gbField.getType().equals(gbFieldType)) {
+            throw new IllegalArgumentException("group field type does not match");
+        }
+        map.merge(gbField, 1, Integer::sum);
+        //map.compute(gbField, (k, v) -> v == null ? 1 : v + 1);
     }
 
     /**
@@ -41,7 +67,30 @@ public class StringAggregator implements Aggregator {
      */
     public OpIterator iterator() {
         // some code goes here
-        throw new UnsupportedOperationException("please implement me for lab2");
+        Type[] types;
+        String[] names;
+        if(gbFieldIdx == Aggregator.NO_GROUPING) {
+            types = new Type[]{ Type.INT_TYPE };
+            names = new String[]{"aggregateVal"};
+        } else {
+            types = new Type[] { gbFieldType, Type.INT_TYPE };
+            names = new String[]{"groupVal", "aggregateVal"};
+        }
+        TupleDesc tupleDesc = new TupleDesc(types, names);
+        List<Tuple> tupleList = map.entrySet().stream().map(entry -> {
+            Field gbField = entry.getKey();
+            int aggVal = entry.getValue();
+            Tuple tuple = new Tuple(tupleDesc);
+            if (gbFieldIdx == Aggregator.NO_GROUPING) {
+                tuple.setField(0, new IntField(aggVal));
+            } else {
+                tuple.setField(0, gbField);
+                tuple.setField(1, new IntField(aggVal));
+            }
+            return tuple;
+        }).collect(Collectors.toList());
+        return new TupleIterator(tupleDesc, tupleList);
     }
+
 
 }

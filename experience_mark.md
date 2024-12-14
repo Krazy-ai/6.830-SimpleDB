@@ -49,3 +49,45 @@ iterator与HeapPage的iterator有关，根据页面大小不断换成新一页He
 ## ex7
 
 读的文件最后要换行
+
+# lab2
+
+## ex1
+
+OpIterator意为可操作迭代器,在SimpleDB中的含义为: 迭代器遍历元素的时候可以同时进行一些操作，具体遍历时执行什么操作由子类决定。![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/107fb87e22773259bbf31154dac80c58.png)
+
+操作迭代器意味着迭代器自身在遍历数据时，会根据自身实现搞点事情，Operator接口模板化了部分流程，各个需要在迭代器遍历时进行操作的子类，去实现readNext这个核心方法，并且每次获取下一个元组的时候，搞点事情即可。
+
+Operator采用**装饰器模式**封装原始迭代器遍历行为，并在其基础上增加了遍历时进行操作的行为。装饰器模式需要有被装饰的对象，这里通过setChildren进行设置，但是这里与普通的装饰器模式不同，因为不同的操作会涉及到不同的个数的被装饰对象。
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/edd466a7e60f098d3e08bebe37bd908f.png)
+
+Operator的实现类都是装饰器，而SeqScan是迭代器的实现，也就是被装饰的对象
+
+Filter循环：![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/b22597f866da3dd528d970988cf89d74.png)
+
+```
+//TODO super和child的open各是什么以及顺序
+```
+
+Join循环：![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/500193990ab1b2e2729c1ffca49c39a8.png)
+
+这里需要**保留驱动表当前正在匹配的行**作为成员变量，用于固定外循环，不然每次只加外循环。（花了一个半小时Debug ToT）
+
+```
+//TODO 回顾，用t1固定外循环，不然每次只加外循环
+```
+
+## ex2
+
+分“分组”和“聚合”两步来操作
+
+**Aggregator聚合器干的事情就是接收传入的Tuple,然后内部进行计算**
+
+fetchNext()中返回迭代器时我们不必自己实现一个，可以直接使用TupleIterator
+
+Aggregate判断一下Field类型，返回IntegerAggregator或StringAggretor即可。
+
+```
+//TODO 为什么int类型记录count不行，为什么在过程中计算平均值不行
+```

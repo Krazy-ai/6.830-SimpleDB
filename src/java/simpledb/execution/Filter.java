@@ -14,6 +14,10 @@ public class Filter extends Operator {
 
     private static final long serialVersionUID = 1L;
 
+    private Predicate predicate;
+    private OpIterator childOperator;
+    private TupleDesc td;
+
     /**
      * Constructor accepts a predicate to apply and a child operator to read
      * tuples to filter from.
@@ -25,29 +29,39 @@ public class Filter extends Operator {
      */
     public Filter(Predicate p, OpIterator child) {
         // some code goes here
+        this.predicate = p;
+        this.childOperator = child;
+        td=childOperator.getTupleDesc();
     }
 
     public Predicate getPredicate() {
         // some code goes here
-        return null;
+        return this.predicate;
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return this.td;
     }
 
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
         // some code goes here
+        //TODO super和child的open各是什么以及顺序
+        childOperator.open();
+        super.open();
     }
 
     public void close() {
         // some code goes here
+        super.close();
+        childOperator.close();
+
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        childOperator.rewind();
     }
 
     /**
@@ -62,18 +76,27 @@ public class Filter extends Operator {
     protected Tuple fetchNext() throws NoSuchElementException,
             TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        if (!childOperator.hasNext()) return null;
+        Tuple t = childOperator.next();
+        while (!predicate.filter(t)){
+            if (!childOperator.hasNext()) return null;
+            t = childOperator.next();
+        }
+        return t;
     }
 
     @Override
     public OpIterator[] getChildren() {
         // some code goes here
-        return null;
+        return new OpIterator[]{this.childOperator};
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
         // some code goes here
+        if (this.childOperator != children[0]) {
+            this.childOperator = children[0];
+        }
     }
 
 }
