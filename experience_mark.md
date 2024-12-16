@@ -26,7 +26,7 @@ TupleDesc是表头那一行的描述信息，Tuple是每一行元组信息。
 
 一个HeapPage能存多少行Tuple，取决于他要保存的一个个元组有多长且都是什么元素。
 
-元组数量的计算：floor((BufferPool.getPageSize()*8) / (tuple size * 8 + 1))。
+元组数量的计算：floor((BufferPool.getPageSize()*8) / (tuple size * 8 + 1`页眉`))。
 
  以byte为单位的header数组的长度是：ceiling(no. tuple slots / 8) 。
 
@@ -91,3 +91,28 @@ Aggregate判断一下Field类型，返回IntegerAggregator或StringAggretor即�
 ```
 //TODO 为什么int类型记录count不行，为什么在过程中计算平均值不行
 ```
+
+## ex3
+
+![img](https://picx.zhimg.com/v2-4d295f899d61fe804026cb9244197b8f_1440w.jpg)
+
+先实现每个Heap Page上的插入删除操作，然后实现每个Heap File上的插入删除，然后再实现BufferPool中的插入删除。
+
+测试用例有错误（浪费时间ToT)
+
+## ex4
+
+**Insert和Delete采用的也是装饰器模式**
+
++ 装饰器对象继承被装饰对象的抽象父类或者父类接口，这样我们才可以在使用时能够用基类指针接收被装饰后的对象实现
++ 装饰器对象内部需要调用被装饰对象的方法获取原数据，然后再此基础上进行计算然后返回一个结果，或者在原有数据基础上增加附加信息，或者啥也不干，只进行相关信息记录。
++ fetchNext方法这里就是Insert装饰器对象需要实现的方法，其内部调用被装饰器对象的next方法获取所有数据，然后执行insert操作，同时计算插入数据条数，最终返回的是插入的数据条数。
+
+```
+@return A 1-field tuple containing the number of inserted records, or
+*         null if called more than once.
+```
+
+返回的结果依然是元组的形式，但是这个元组只有1个属性
+
+每次fetch之后必然会榨干迭代器，所以应该保持一个变量，每次调用fetch的时候标记。

@@ -42,7 +42,7 @@ public class IntegerAggregator implements Aggregator {
         this.aggregateFieldIdx = afield;
         this.operator = what;
         this.map = new HashMap<>();
-        count = new HashMap<>();
+        this.count = new HashMap<>();
     }
 
     /**
