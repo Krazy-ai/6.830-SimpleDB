@@ -116,3 +116,9 @@ Aggregate判断一下Field类型，返回IntegerAggregator或StringAggretor即�
 返回的结果依然是元组的形式，但是这个元组只有1个属性
 
 每次fetch之后必然会榨干迭代器，所以应该保持一个变量，每次调用fetch的时候标记。
+
+## ex5
+
+LRU缓存实现（双向链表）https://leetcode.cn/problems/lru-cache/，map的值改为LRUnode
+
+flushPage应该将脏页写入磁盘并标记为不脏，同时将其留在BufferPool中

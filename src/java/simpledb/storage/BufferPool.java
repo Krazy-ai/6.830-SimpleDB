@@ -38,7 +38,27 @@ public class BufferPool {
     public static final int DEFAULT_PAGES = 50;
 
     private final Integer numPages;
-    private final Map<PageId, Page> pageCache;
+    private final Map<PageId, LRUnode> pageCache;
+
+    private LRUnode head;
+    private LRUnode tail;
+
+    /** TODO 对map操作加锁，也就意味着对LRU队列操作加锁。BufferPool类每个方法不要sync，会死锁。并发操作均使用mapMonitor!!!*/
+    private final ReentrantLock mapMonitor = new ReentrantLock();
+    class LRUnode{
+        PageId pid;
+        Page page;
+        LRUnode next;
+        LRUnode prev;
+
+        public LRUnode() {
+        }
+
+        public LRUnode(PageId pid, Page page) {
+            this.pid = pid;
+            this.page = page;
+        }
+    }
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -49,6 +69,10 @@ public class BufferPool {
         // some code goes here
         this.numPages = numPages;
         this.pageCache = new ConcurrentHashMap<>();
+        head = new LRUnode();
+        tail = new LRUnode();
+        head.next = tail;
+        tail.prev = head;
     }
     
     public static int getPageSize() {
@@ -83,26 +107,33 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        //todo 没完成
         long st = System.currentTimeMillis();
         Lock lock = new ReentrantLock();
         while (true) {
             if (lock.tryLock()) {
                 try {
                     // 获取到锁后，检查是否存在缓存
-                    if (!pageCache.containsKey(pid)) {
-                        if (pageCache.size() > numPages) {
-                            throw new DbException("BufferPool is full");
-                        }
+                    LRUnode node = pageCache.getOrDefault(pid, null);
+                    if(node == null){
                         DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
                         Page page = dbFile.readPage(pid);
-                        pageCache.put(pid, page);
+                        LRUnode newNode = new LRUnode(pid, page);
+                        pageCache.put(pid, newNode);
+                        addHead(newNode);
+                        if (pageCache.size() > numPages) {
+                            evictPage();
+                        }
+                        return newNode.page;
+                    }else{
+                        moveToHead(node);
+                        return node.page;
                     }
-                }
-                 finally {
+
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                } finally {
                     lock.unlock();
                 }
-                return pageCache.get(pid);
             } else {
                 // 如果未能获取到锁，判断是否超时
                 long now = System.currentTimeMillis();
@@ -215,7 +246,9 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-
+        for (PageId pageId : pageCache.keySet()) {
+            flushPage(pageId);
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -229,6 +262,11 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
+        LRUnode node = pageCache.get(pid);
+        if(node != null) {
+            removeNode(node);
+            pageCache.remove(pid);
+        }
     }
 
     /**
@@ -238,6 +276,17 @@ public class BufferPool {
     private synchronized  void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+        LRUnode node = pageCache.get(pid);
+        if(node == null) return;
+        TransactionId dirtyTId = node.page.isDirty();
+        if(dirtyTId != null) {
+            DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+            Database.getLogFile().logWrite(dirtyTId, node.page.getBeforeImage(), node.page);
+            Database.getLogFile().force();
+            dbFile.writePage(node.page);
+            node.page.markDirty(false, null);
+        }
+
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -251,9 +300,35 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized  void evictPage() throws DbException, IOException {
         // some code goes here
         // not necessary for lab1
+        LRUnode rm = removeTail();
+        flushPage(rm.pid);
+        pageCache.remove(rm.pid);
+        rm.page.markDirty(false, null);
     }
 
+    void addHead(LRUnode node) {
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+        node.prev = head;
+    }
+
+    void removeNode(LRUnode node) {
+        node.next.prev = node.prev;
+        node.prev.next = node.next;
+    }
+
+    void moveToHead(LRUnode node) {
+        removeNode(node);
+        addHead(node);
+    }
+
+    LRUnode removeTail() {
+        LRUnode res = tail.prev;
+        removeNode(res);
+        return res;
+    }
 }
