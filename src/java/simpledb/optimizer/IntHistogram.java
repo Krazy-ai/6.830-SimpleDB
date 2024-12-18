@@ -6,6 +6,12 @@ import simpledb.execution.Predicate;
  */
 public class IntHistogram {
 
+    private int bucketCounts;
+    private int min;
+    private int max;
+    private int[] buckets;
+    private double width;
+    private int ntups;
     /**
      * Create a new IntHistogram.
      * 
@@ -24,6 +30,12 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.bucketCounts = buckets;
+        this.min = min;
+        this.max = max;
+        this.buckets = new int[buckets];
+        this.width = (double)(max - min) / buckets;
+        this.ntups = 0;
     }
 
     /**
@@ -32,8 +44,17 @@ public class IntHistogram {
      */
     public void addValue(int v) {
     	// some code goes here
+        int index = getIndex(v);
+        buckets[index]++;
+        ntups++;
     }
 
+    private int getIndex(int v) {
+        if (v > max || v < min) {
+            throw new IllegalArgumentException("value out of range");
+        }
+        return v == max ? (bucketCounts - 1) : ((int) ((v - min) / width));
+    }
     /**
      * Estimate the selectivity of a particular predicate and operand on this table.
      * 
@@ -45,9 +66,49 @@ public class IntHistogram {
      * @return Predicted selectivity of this particular operator and value
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
-
     	// some code goes here
-        return -1.0;
+        double selectivity = 0.0;
+        switch (op){
+            case EQUALS:{
+                if (v < min || v > max) {
+                    return 0.0;
+                }
+                // (h / w) / ntups --> 当前元素的平均个数 / 总元素个数
+                // 这里width+1是为了确保selectivity的范围在(0,1)之间   对某些测试用例的精度有影响
+                int h = buckets[getIndex(v)];
+                return  (double) h / ((int) width + 1) / ntups;
+            }
+            case GREATER_THAN:{
+                if (v <= min) {
+                    return 1.0;
+                }
+                if (v >= max) {
+                    return 0.0;
+                }
+                int index = getIndex(v);
+                for(int i=index+1; i<bucketCounts; i++){
+                    selectivity += (buckets[i] + 0.0) / ntups;
+                }
+                int h_b = buckets[index];
+                // b_part = (b_right - const) / w_b --> 满足要求元素占当前桶内占比
+                // b_f = h_b / ntups  --> 当前桶内元素个数在总元素个数中的占比
+                // selectivity = b_f * b_part --> 当前桶内满足要求元素个数占总元素个数百分比
+                double b_f = (double) h_b / ntups;
+                double b_part = ((index + 1) * width - v) / width;
+                selectivity += b_f * b_part;
+                return selectivity;
+            }
+            case LESS_THAN:
+                return 1 - estimateSelectivity(Predicate.Op.GREATER_THAN_OR_EQ, v);
+            case LESS_THAN_OR_EQ:
+                return estimateSelectivity(Predicate.Op.LESS_THAN, v+1);
+            case GREATER_THAN_OR_EQ:
+                return estimateSelectivity(Predicate.Op.GREATER_THAN, v-1);
+            case NOT_EQUALS:
+                return 1 - estimateSelectivity(Predicate.Op.EQUALS, v);
+            default:
+                return selectivity;
+        }
     }
     
     /**
@@ -58,10 +119,13 @@ public class IntHistogram {
      *     join optimization. It may be needed if you want to
      *     implement a more efficient optimization
      * */
-    public double avgSelectivity()
-    {
+    public double avgSelectivity() {
         // some code goes here
-        return 1.0;
+        double avg = 0.0;
+        for (int i = 0; i < bucketCounts; i++) {
+            avg += (buckets[i] + 0.0) / ntups;
+        }
+        return avg;
     }
     
     /**
@@ -69,6 +133,12 @@ public class IntHistogram {
      */
     public String toString() {
         // some code goes here
-        return null;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < buckets.length; i++) {
+            double b_l = i * width;
+            double b_r = (i + 1) * width;
+            sb.append(String.format("[%f, %f]:%d\n", b_l, b_r, buckets[i]));
+        }
+        return sb.toString();
     }
 }

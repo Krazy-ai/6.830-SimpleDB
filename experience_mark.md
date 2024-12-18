@@ -122,3 +122,35 @@ Aggregate判断一下Field类型，返回IntegerAggregator或StringAggretor即�
 LRU缓存实现（双向链表）https://leetcode.cn/problems/lru-cache/，map的值改为LRUnode
 
 flushPage应该将脏页写入磁盘并标记为不脏，同时将其留在BufferPool中
+
+# lab3
+
+基于成本的优化策略
+
+精确估计查询计划的成本非常困难，在本次实验，我们仅关注连接和基于表访问的成本，我们不关心访问方法的选择性(因为我们只有table scans一个访问方法)或额外操作的成本(例如聚合操作)
+
+## ex1
+
+直方图统计
+
++ equal:
+
+```
+// (h / w) / ntups --> 当前元素的平均个数 / 总元素个数
+```
+
+w取**width+1**是为了确保selectivity的范围在(0,1)之间   对某些测试用例的精度有影响
+
++ greater_than:
+
+```
+// b_part = (b_right - const) / w_b --> 满足要求元素占当前桶内占比
+// b_f = h_b / ntups  --> 当前桶内元素个数在总元素个数中的占比
+// selectivity = b_f * b_part --> 当前桶内满足要求元素个数占总元素个数百分比
+```
+
+在数据库中，字符串大小的比较本质上还是数字类型的比较，比如这里StringHistoram是基于IntHistogram间接实现的，那么我们可以取String的高四位，按照相同位置的字符的ASCII码值的大小进行排序的，并不需要每位进行ASCII码值比较，可以使用移位来进行实现，高位的ASCII码值移位到左边，这样越大的String其得到的值也越大。
+
+## ex2
+
+对表中的每个列建立直方图，需要对表中元素进行两次迭代（需要一个迭代器指针遍历元组），第一遍迭代找出最大最小的值，第二遍迭代进行addValue，建立直方图。

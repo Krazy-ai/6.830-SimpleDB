@@ -1,11 +1,13 @@
 package simpledb.optimizer;
 
 import simpledb.common.Database;
+import simpledb.common.DbException;
 import simpledb.common.Type;
 import simpledb.execution.Predicate;
 import simpledb.execution.SeqScan;
 import simpledb.storage.*;
 import simpledb.transaction.Transaction;
+import simpledb.transaction.TransactionAbortedException;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -24,6 +26,13 @@ public class TableStats {
     private static final ConcurrentMap<String, TableStats> statsMap = new ConcurrentHashMap<>();
 
     static final int IOCOSTPERPAGE = 1000;
+    private final int ioCostPerPage;
+    private int tableid;
+    private DbFileIterator dbFileIterator;
+    private int[][] maxAndMin;  //每一个字段的max和min
+    private int[] min;  //每一个字段的min
+    private IntHistogram[] intHistograms;  //每一个字段的直方图
+    private int numPages;
 
     public static TableStats getTableStats(String tablename) {
         return statsMap.get(tablename);
@@ -33,8 +42,7 @@ public class TableStats {
         statsMap.put(tablename, stats);
     }
     
-    public static void setStatsMap(Map<String,TableStats> s)
-    {
+    public static void setStatsMap(Map<String,TableStats> s) {
         try {
             java.lang.reflect.Field statsMapF = TableStats.class.getDeclaredField("statsMap");
             statsMapF.setAccessible(true);
@@ -87,8 +95,54 @@ public class TableStats {
         // necessarily have to (for example) do everything
         // in a single scan of the table.
         // some code goes here
+        this.tableid = tableid;
+        this.ioCostPerPage = ioCostPerPage;
+        this.dbFileIterator = Database.getCatalog().getDatabaseFile(tableid).iterator(null);
+        try {
+            dbFileIterator.open();
+            this.maxAndMin = getMaxAndMin(tableid);
+            this.intHistograms = getIntHistograms(tableid);
+        } catch (DbException e) {
+            throw new RuntimeException(e);
+        } catch (TransactionAbortedException e) {
+            throw new RuntimeException(e);
+        }
+        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(tableid);
+        this.numPages = hf.numPages();
     }
 
+    private int[][] getMaxAndMin(int tableid) throws TransactionAbortedException, DbException {
+        dbFileIterator.rewind();
+        int numFields = Database.getCatalog().getDatabaseFile(tableid).getTupleDesc().numFields();
+        int[][] ret = new int[2][numFields];
+        while(dbFileIterator.hasNext()){
+            Tuple tuple = dbFileIterator.next();
+            for(int i=0;i<numFields;i++){
+                Field field = tuple.getField(i);
+                if(field instanceof IntField){
+                    int val = ((IntField) field).getValue();
+                    ret[0][i] = Math.max(ret[0][i],val);
+                    ret[1][i] = Math.min(ret[1][i],val);
+                }
+            }
+        }
+        return ret;
+    }
+
+    private IntHistogram[] getIntHistograms(int tableid) throws TransactionAbortedException, DbException {
+        int numFields = Database.getCatalog().getDatabaseFile(tableid).getTupleDesc().numFields();
+        IntHistogram[] ret = new IntHistogram[numFields];
+        for(int i=0;i<numFields;i++){
+            ret[i] = new IntHistogram(NUM_HIST_BINS,maxAndMin[1][i],maxAndMin[0][i]);
+            this.dbFileIterator.rewind();
+            while(dbFileIterator.hasNext()){
+                Tuple tuple = dbFileIterator.next();
+                IntField field = (IntField)tuple.getField(i);
+                ret[i].addValue(field.getValue());
+            }
+        }
+        return ret;
+    }
     /**
      * Estimates the cost of sequentially scanning the file, given that the cost
      * to read a page is costPerPageIO. You can assume that there are no seeks
@@ -103,7 +157,7 @@ public class TableStats {
      */
     public double estimateScanCost() {
         // some code goes here
-        return 0;
+        return this.numPages*ioCostPerPage;
     }
 
     /**
@@ -117,7 +171,13 @@ public class TableStats {
      */
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
-        return 0;
+        try {
+            return (int)(totalTuples()*selectivityFactor);
+        } catch (TransactionAbortedException e) {
+            throw new RuntimeException(e);
+        } catch (DbException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -150,15 +210,23 @@ public class TableStats {
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
         // some code goes here
-        return 1.0;
+        IntField constantField = (IntField)constant;
+        return this.intHistograms[field].estimateSelectivity(op,constantField.getValue());
     }
 
     /**
      * return the total number of tuples in this table
      * */
-    public int totalTuples() {
+    public int totalTuples() throws TransactionAbortedException, DbException {
         // some code goes here
-        return 0;
+        dbFileIterator.rewind();
+        int total = 0;
+        while(dbFileIterator.hasNext())
+        {
+            total ++;
+            dbFileIterator.next();
+        }
+        return total;
     }
 
 }
