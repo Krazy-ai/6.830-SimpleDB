@@ -30,8 +30,7 @@ public class TableStats {
     private int tableid;
     private DbFileIterator dbFileIterator;
     private int[][] maxAndMin;  //每一个字段的max和min
-    private int[] min;  //每一个字段的min
-    private IntHistogram[] intHistograms;  //每一个字段的直方图
+    private Histogram[] histograms;  //每一个字段的直方图
     private int numPages;
 
     public static TableStats getTableStats(String tablename) {
@@ -101,7 +100,7 @@ public class TableStats {
         try {
             dbFileIterator.open();
             this.maxAndMin = getMaxAndMin(tableid);
-            this.intHistograms = getIntHistograms(tableid);
+            this.histograms = getHistograms(tableid);
         } catch (DbException e) {
             throw new RuntimeException(e);
         } catch (TransactionAbortedException e) {
@@ -129,16 +128,26 @@ public class TableStats {
         return ret;
     }
 
-    private IntHistogram[] getIntHistograms(int tableid) throws TransactionAbortedException, DbException {
-        int numFields = Database.getCatalog().getDatabaseFile(tableid).getTupleDesc().numFields();
-        IntHistogram[] ret = new IntHistogram[numFields];
-        for(int i=0;i<numFields;i++){
-            ret[i] = new IntHistogram(NUM_HIST_BINS,maxAndMin[1][i],maxAndMin[0][i]);
-            this.dbFileIterator.rewind();
-            while(dbFileIterator.hasNext()){
-                Tuple tuple = dbFileIterator.next();
-                IntField field = (IntField)tuple.getField(i);
-                ret[i].addValue(field.getValue());
+    private Histogram[] getHistograms(int tableid) throws TransactionAbortedException, DbException {
+        TupleDesc tupleDesc = Database.getCatalog().getDatabaseFile(tableid).getTupleDesc();
+        int numFields = tupleDesc.numFields();
+        Histogram[] ret = new Histogram[numFields];
+        for (int i = 0; i < numFields; i++) {
+            if(tupleDesc.getFieldType(i) == Type.INT_TYPE) {
+                ret[i] = new IntHistogram(NUM_HIST_BINS, maxAndMin[1][i],maxAndMin[0][i]);
+            } else {
+                ret[i] = new StringHistogram(NUM_HIST_BINS);
+            }
+        }
+        dbFileIterator.rewind();
+        while (dbFileIterator.hasNext()) {
+            Tuple tuple = dbFileIterator.next();
+            for (int i = 0; i < tupleDesc.numFields(); i++) {
+                if (tuple.getField(i).getType() == Type.INT_TYPE) {
+                    ((IntHistogram) ret[i]).addValue(((IntField) tuple.getField(i)).getValue());
+                } else {
+                    ((StringHistogram) ret[i]).addValue(((StringField) tuple.getField(i)).getValue());
+                }
             }
         }
         return ret;
@@ -157,7 +166,7 @@ public class TableStats {
      */
     public double estimateScanCost() {
         // some code goes here
-        return this.numPages*ioCostPerPage;
+        return this.numPages * ioCostPerPage;
     }
 
     /**
@@ -172,7 +181,7 @@ public class TableStats {
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
         try {
-            return (int)(totalTuples()*selectivityFactor);
+            return (int) (totalTuples() * selectivityFactor);
         } catch (TransactionAbortedException e) {
             throw new RuntimeException(e);
         } catch (DbException e) {
@@ -192,7 +201,12 @@ public class TableStats {
      * */
     public double avgSelectivity(int field, Predicate.Op op) {
         // some code goes here
-        return 1.0;
+        TupleDesc tupleDesc = Database.getCatalog().getTupleDesc(tableid);
+        if(tupleDesc.getFieldType(field) == Type.INT_TYPE) {
+            return ((IntHistogram) histograms[field]).avgSelectivity();
+        } else {
+            return ((StringHistogram) histograms[field]).avgSelectivity();
+        }
     }
 
     /**
@@ -210,8 +224,12 @@ public class TableStats {
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
         // some code goes here
-        IntField constantField = (IntField)constant;
-        return this.intHistograms[field].estimateSelectivity(op,constantField.getValue());
+        TupleDesc tupleDesc = Database.getCatalog().getTupleDesc(tableid);
+        if(tupleDesc.getFieldType(field) == Type.INT_TYPE) {
+            return ((IntHistogram) histograms[field]).estimateSelectivity(op, ((IntField) constant).getValue());
+        } else {
+            return ((StringHistogram) histograms[field]).estimateSelectivity(op, ((StringField) constant).getValue());
+        }
     }
 
     /**

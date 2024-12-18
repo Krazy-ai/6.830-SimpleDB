@@ -3,8 +3,9 @@ package simpledb.optimizer;
 import simpledb.execution.Predicate;
 
 /** A class to represent a fixed-width histogram over a single integer-based field.
+ * @author krazy
  */
-public class IntHistogram {
+public class IntHistogram implements Histogram{
 
     private int bucketCounts;
     private int min;
