@@ -119,7 +119,7 @@ Aggregate判断一下Field类型，返回IntegerAggregator或StringAggretor即�
 
 ## ex5
 
-LRU缓存实现（双向链表）https://leetcode.cn/problems/lru-cache/，map的值改为LRUnode
+[LRU缓存实现](https://leetcode.cn/problems/lru-cache/)（双向链表），map的值改为LRUnode
 
 flushPage应该将脏页写入磁盘并标记为不脏，同时将其留在BufferPool中
 
@@ -128,6 +128,8 @@ flushPage应该将脏页写入磁盘并标记为不脏，同时将其留在Buffe
 基于成本的优化策略
 
 精确估计查询计划的成本非常困难，在本次实验，我们仅关注连接和基于表访问的成本，我们不关心访问方法的选择性(因为我们只有table scans一个访问方法)或额外操作的成本(例如聚合操作)
+
+**在这个实验中，你只需要考虑左深的计划。**
 
 ## ex1
 
@@ -156,3 +158,116 @@ w取**width+1**是为了确保selectivity的范围在(0,1)之间   对某些测�
 对表中的每个列建立直方图，需要对表中元素进行两次迭代（需要一个迭代器指针遍历元组），第一遍迭代找出最大最小的值，第二遍迭代进行addValue，建立直方图。
 
 定义接口Histogram，方便一起实现int和String的直方图。
+
+## ex3
+
+```
+joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost
+       					 + ntups(t1) x ntups(t2)  //CPU cost
+```
+
+数据库领域的 Cardinality 表示**去重后唯一值（Unique Values）的数量**
+
+连接基数估计问题比过滤器选择性估计问题更难，实验只要求简单实现，给出了3个优化规则`（给那么多参数干嘛）`：
+
++ 当Predicate.Op 是 EQUALS时：
+  + 当表一是join的字段是主键，对应表二的字段也是主键的话，就返回card数小的那个值。
+  + 当表一是join的字段是主键，对应表二的字段不是主键的话，就返回card2。
+  + 当表一是join的字段不是主键，对应表二的字段是主键的话，就返回card1。
+  + 对于没有主键的等值连接，很难说清楚输出的元组数量–它可以是两个表的基数乘积的大小(如果两个表都有所有元组的值相同)–或者为0；可以构造一个简单的启发式(比如，两个表中较大的那个表的大小)`(选择“两个表中较大的那个表的大小”才能通过后面的测试用例，why)`
++ 同理Predicate.Op 是 NOT_EQUALS时，计算**记录总数-等值记录数**，即用card1*card2减去上面对应情况的值
+
++ 当Predicate.Op 不是 EQUALS时：
+  + 那么官方文档中给了一个公式，就是返回 0.3 * card1 *card2 。
+
++ 最后一种情况，当card结果小于等于0时，直接返回1。
+
+选择性=唯一值的数量/总记录数
+
+数据库在选择索引时，也是会估计基数，然后计算出选择性，使用选择性可以衡量一个字段的不重复记录数有多少，如果一个字段的选择性很低接近0，那么就没必要用索引了，因为会有大量重复的数据，导致我们不断的去回表；如果一个字段的选择性很高，接近于1，说明该字段的记录数是很多不重复，那样通过索引我们可以加快查询的速度。
+
+**所以这也启示我们，建表时如果字段没有重复值要声明Unique，选择性的估计才好做**
+
+## ex4
+
+已经实现了成本估计的方法，接下来将要对查询计划进行优化。(限定了只支持LeftDeepTree。)
+
+Selinger优化器
+
+列举出所有的连接顺序，计算出每种连接顺序的代价，然后选择代价最小的连接顺序去执行。
+
+按照枚举的方式去弄，有n!种方案，时间复杂度很高。所以本实验采用的是一种基于**动态规划**的查询计划生成。
+
+TiDB 中使用的是 Join Reorder 算法[(图示)](https://blog.csdn.net/qq_44766883/article/details/127414263?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522f06f734cdbb774257ce031b65c71442b%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fblog.%2522%257D&request_id=f06f734cdbb774257ce031b65c71442b&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~blog~first_rank_ecpm_v1~rank_v31_ecpm-4-127414263-null-null.nonecase&utm_term=6.830&spm=1018.2226.3001.4450)，是一种贪心算法。**Mysql**数据库对于多表关联也采用的是贪心算法。tidb或者mysql使用贪心算法只能得到局部最优执行计划，但是计算最优解所消耗的代价较小，而postgreSQL使用动态规划能够得到最优执行计划，但是计算最优解算法复杂度较高，代价较大。
+
+思路是这样的:先找出部分表的最优连接顺序，然后固定这些表的顺序，然后去连接其它表，这样也可以达到最优。
+
+举个例子，我们有5张表进行连接；首先，我们找到5张表中两表连接代价最低的两张表，固定这两张表的顺序；然后用产生的结果去连接剩下的三张表，选出最底代价的顺序；然后5张表的连接顺序就完成了。这样，排列问题就变成了一个子集问题了，如ABCDE五张表，可以(A, B)(C, D, E)，可以(B, A)(C, D, E)等等。所以，对给定n个关系的集合，最多有2的n次方个子集，就算是n = 10，方案数也才1024，可见优化了很多。
+
+```
+1. j = set of join nodes
+2. for (i in 1...|j|):
+3.     for s in {all length i subsets of j}
+4.       bestPlan = {}
+5.       for s' in {all length d-1 subsets of s}
+6.            subplan = optjoin(s')
+7.            plan = best way to join (s-s') to subplan
+8.            if (cost(plan) < cost(bestPlan))
+9.               bestPlan = plan
+10.      optjoin(s) = bestPlan
+11. return optjoin(j)
+```
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/ed9cbb5724791702d16c9e6fdce736e5.png)
+
+暴力遍历所有可能的Join排列，然后分别估计它们的总的Cost，然后选出总Cost最小的一组作为查询优化的结果。
+
+**planCache相当于记忆化数组**
+
+该exercise已经给出了许多辅助方法，其中
+
++ `enumeraterSubsets`为我们返回列表v的大小为size的子集。
+
+  原始方法的实现思路是通过不断扩展现有子集集合来生成所有的子集，直到达到目标大小。这是通过两个嵌套循环实现的。
+
+  改进：回溯生成全排列	QueryTest 2.6s->2.4s	bigOrderJoinsTest 5s->1.5s
+
++ `computeCostAndCardOfSubplan`给出连接的子集joinSet，以及需要从集合中移除的连接joinToRemove，该方法计算将joinToRemove加入到joinSet-{joinToRemove}的最佳排序方式。它返回CostCard对象，该对象包含成本、基数和最佳的连接顺序(以列表形式返回)。
+
+​	如果无法找到最优的计划(例如，没有最左连接是可能的)，computeCostAndCardOfSubplan方法可能返回null，或者所有计划的成	本均大于bestCostSoFar参数。该方法通过参数planCache(先前以排序连接的缓存)来快速查找将将joinToRemove加入到joinSet-	{joinToRemove}的最快方法。
+
++ `computeCostAndCardOfSubplan`算法大概流程就是：
+
+  1. 获取joinToRemove节点的基本信息；
+
+  2. 生成一个连接方案：
+
+     + 当只有一个joinToRemove节点时，该节点本身就是一个连接方案；
+
+     + 当有多个节点时，先获取删除了joinToRemove节点后的joinSet的子最佳方案，然后再生成joinToRemove节点的表与子最佳方案进行连接的方案：
+
+       （1）如果joinToRemove节点左表在子最佳方案中，左表=子最佳方案，右表=joinToRemove节点右表；
+
+       （2）否则如果joinToRemove节点右表在最佳方案中，左表=joinToRemove节点左表，右表=子最佳方案。
+
+
+  3. 计算当前连接方案的cost；
+
+  4. 交换一次join两边顺序，再计算cost，并比较两次的cost得到最佳方案；
+
+  5. 生成最终结果。
+
+
+
+**查询优化器的构成**：
+
+1. Parser.Java在初始化时会收集并构造所有表格的统计信息，并存到statsMap中。当有查询请求发送到Parser中时，会调用parseQuery方法去处理‘
+
+2. parseQuery方法会把解析器解析后的结果去构造出一个LogicalPlan实例，然后调用LogicalPlan实例的physicalPlan方法去执行，然后返回的是结果记录的迭代器，也就是我们在lab2中做的东西都会在physicalPlan中会被调用。
+
+总体的，lab3的查询优化应该分为两个阶段：
+
++ 第一阶段：收集表的统计信息，有了统计信息我们才可以进行估计；
++ 第二阶段：根据统计信息进行估计，找出最优的执行方案。
+
+（2.4节讲了好多优化，有机会再实现 ToT)

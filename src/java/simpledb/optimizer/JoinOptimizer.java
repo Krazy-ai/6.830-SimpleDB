@@ -3,6 +3,9 @@ package simpledb.optimizer;
 import simpledb.common.Database;
 import simpledb.ParsingException;
 import simpledb.execution.*;
+import simpledb.storage.DbFile;
+import simpledb.storage.DbFileIterator;
+import simpledb.storage.HeapFile;
 import simpledb.storage.TupleDesc;
 
 import java.util.*;
@@ -119,8 +122,7 @@ public class JoinOptimizer {
      * @return An estimate of the cost of this query, in terms of cost1 and
      *         cost2
      */
-    public double estimateJoinCost(LogicalJoinNode j, int card1, int card2,
-            double cost1, double cost2) {
+    public double estimateJoinCost(LogicalJoinNode j, int card1, int card2, double cost1, double cost2) {
         if (j instanceof LogicalSubplanJoinNode) {
             // A LogicalSubplanJoinNode represents a subquery.
             // You do not need to implement proper support for these for Lab 3.
@@ -130,7 +132,9 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            //joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost
+            //        + ntups(t1) x ntups(t2)  //CPU cost
+            return cost1 + card1 * cost2 + card1 * card2;
         }
     }
 
@@ -154,7 +158,7 @@ public class JoinOptimizer {
      * @return The cardinality of the join
      */
     public int estimateJoinCardinality(LogicalJoinNode j, int card1, int card2,
-            boolean t1pkey, boolean t2pkey, Map<String, TableStats> stats) {
+                                       boolean t1pkey, boolean t2pkey, Map<String, TableStats> stats) {
         if (j instanceof LogicalSubplanJoinNode) {
             // A LogicalSubplanJoinNode represents a subquery.
             // You do not need to implement proper support for these for Lab 3.
@@ -174,8 +178,32 @@ public class JoinOptimizer {
                                                    String field2PureName, int card1, int card2, boolean t1pkey,
                                                    boolean t2pkey, Map<String, TableStats> stats,
                                                    Map<String, Integer> tableAliasToId) {
-        int card = 1;
+        //TODO 这么多参数干嘛
+        int card;
         // some code goes here
+        if (joinOp.equals(Predicate.Op.EQUALS)) {
+            if (t1pkey && t2pkey) {
+                card = Math.min(card1, card2);
+            } else if (t1pkey) {
+                card = card2;
+            } else if (t2pkey) {
+                card = card1;
+            } else {
+                card = Math.max(card1, card2);
+            }
+        } else if (joinOp.equals(Predicate.Op.NOT_EQUALS)) {
+            if (t1pkey && t2pkey) {
+                card = card1 * card2 - Math.min(card1, card2);
+            } else if (t1pkey) {
+                card = card1 * card2 - card2;
+            } else if (t2pkey) {
+                card = card1 * card2 - card1;
+            } else {
+                card = card1 * card2 - Math.max(card1, card2);
+            }
+        } else {
+            card = (int) (0.3 * card1 * card2);
+        }
         return card <= 0 ? 1 : card;
     }
 
@@ -190,6 +218,23 @@ public class JoinOptimizer {
      * @return a set of all subsets of the specified size
      */
     public <T> Set<Set<T>> enumerateSubsets(List<T> v, int size) {
+        Set<Set<T>> result = new HashSet<>();
+        generateSubsets(v, size, 0, new HashSet<>(), result);
+        return result;
+    }
+
+    private <T> void generateSubsets(List<T> v, int size, int start, Set<T> currentSubset, Set<Set<T>> result) {
+        if (currentSubset.size() == size) {
+            result.add(new HashSet<>(currentSubset));
+            return;
+        }
+        for (int i = start; i < v.size(); i++) {
+            currentSubset.add(v.get(i));
+            generateSubsets(v, size, i + 1, currentSubset, result);
+            currentSubset.remove(v.get(i));
+        }
+    }
+    /*public <T> Set<Set<T>> enumerateSubsets(List<T> v, int size) {
         Set<Set<T>> els = new HashSet<>();
         els.add(new HashSet<>());
         // Iterator<Set> it;
@@ -209,7 +254,7 @@ public class JoinOptimizer {
 
         return els;
 
-    }
+    }*/
 
     /**
      * Compute a logical, reasonably efficient join on the specified tables. See
@@ -238,7 +283,32 @@ public class JoinOptimizer {
 
         // some code goes here
         //Replace the following
-        return joins;
+        PlanCache planCache = new PlanCache();
+        CostCard bestCostCard = new CostCard();
+        for(int i=1;i<=joins.size();i++){
+            Set<Set<LogicalJoinNode>> subsets = enumerateSubsets(joins, i);
+            for(Set<LogicalJoinNode> subset : subsets){
+                double bestCostSoFar = Double.MAX_VALUE;
+                for (LogicalJoinNode joinNode : subset) {
+                    //是否更低的成本在此方法中计算，planCache相当于记忆化数组
+                    CostCard costCard =
+                            computeCostAndCardOfSubplan(stats, filterSelectivities, joinNode, subset, bestCostSoFar, planCache);
+                    // 返回null,说明无法进行JOIN操作或者当前计算得出的连接成本比已经求出的最低成本贵
+                    if (costCard == null) {
+                        continue;
+                    }
+                    bestCostSoFar = costCard.cost;
+                    bestCostCard = costCard;
+                }
+                if (bestCostSoFar != Double.MAX_VALUE) {
+                    planCache.addPlan(subset, bestCostCard.cost, bestCostCard.card, bestCostCard.plan);
+                }
+            }
+        }
+        if (explain) {
+            printJoins(bestCostCard.plan, planCache, stats, filterSelectivities);
+        }
+        return bestCostCard.plan;
     }
 
     // ===================== Private Methods =================================

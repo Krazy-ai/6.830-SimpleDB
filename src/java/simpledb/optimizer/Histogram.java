@@ -1,6 +1,8 @@
 package simpledb.optimizer;
 
-import simpledb.execution.Predicate;
 
+/**
+ * @author krazy
+ */
 public interface Histogram {
 }

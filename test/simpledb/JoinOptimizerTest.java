@@ -599,8 +599,7 @@ public class JoinOptimizerTest extends SimpleDbTestBase {
         filterSelectivities.put("i", 1.0);
 
         // Add the nodes to a collection for a query plan
-        nodes.add(new LogicalJoinNode("a", "b", "c1", "c1",
-                Predicate.Op.LESS_THAN));
+        nodes.add(new LogicalJoinNode("a", "b", "c1", "c1", Predicate.Op.LESS_THAN));
         nodes.add(new LogicalJoinNode("b", "c", "c0", "c0", Predicate.Op.EQUALS));
         nodes.add(new LogicalJoinNode("c", "d", "c1", "c1", Predicate.Op.EQUALS));
         nodes.add(new LogicalJoinNode("d", "e", "c0", "c0", Predicate.Op.EQUALS));
@@ -619,7 +618,7 @@ public class JoinOptimizerTest extends SimpleDbTestBase {
 
         // Set the last boolean here to 'true' in order to have orderJoins()
         // print out its logic
-        result = j.orderJoins(stats, filterSelectivities, false);
+        result = j.orderJoins(stats, filterSelectivities, true);
 
         // If you're only re-ordering the join nodes,
         // you shouldn't end up with more than you started with
