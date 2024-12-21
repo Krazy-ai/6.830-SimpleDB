@@ -4,6 +4,7 @@ import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
 import simpledb.common.DeadlockException;
+import simpledb.transaction.PageLockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -37,6 +38,7 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private PageLockManager pageLockManager;
     private final Integer numPages;
     private final Map<PageId, LRUnode> pageCache;
 
@@ -73,6 +75,7 @@ public class BufferPool {
         tail = new LRUnode();
         head.next = tail;
         tail.prev = head;
+        pageLockManager = new PageLockManager();
     }
     
     public static int getPageSize() {
@@ -107,12 +110,13 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        long st = System.currentTimeMillis();
-        Lock lock = new ReentrantLock();
+        /*long st = System.currentTimeMillis();
+        Lock lock = new ReentrantLock();*/
+        int acquireType = perm == Permissions.READ_ONLY ? PageLockManager.PageLock.SHARE : PageLockManager.PageLock.EXCLUSIVE;
+        long start = System.currentTimeMillis();
         while (true) {
-            if (lock.tryLock()) {
-                try {
-                    // 获取到锁后，检查是否存在缓存
+            try {
+                if (pageLockManager.acquireLock(pid, tid, acquireType)) {
                     LRUnode node = pageCache.getOrDefault(pid, null);
                     if(node == null){
                         DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
@@ -128,24 +132,24 @@ public class BufferPool {
                         moveToHead(node);
                         return node.page;
                     }
-
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    lock.unlock();
                 }
-            } else {
-                // 如果未能获取到锁，判断是否超时
-                long now = System.currentTimeMillis();
-                if (now - st > 500) {
-                    throw new TransactionAbortedException();
-                }
-                //添加短暂的休眠，避免 CPU 过度占用
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();// 中断处理
-                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }finally {
+                //pageLockManager.releaseLock(pid, tid);
+            }
+            // 如果未能获取到锁，判断是否超时
+            long now = System.currentTimeMillis();
+            if (now - start > 500) {
+                throw new TransactionAbortedException();
+            }
+            //添加短暂的休眠，避免 CPU 过度占用
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();// 中断处理
             }
         }
     }
@@ -162,6 +166,7 @@ public class BufferPool {
     public  void unsafeReleasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
+        pageLockManager.releaseLock(pid,tid);
     }
 
     /**
@@ -172,13 +177,14 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) {
         // some code goes here
         // not necessary for lab1|lab2
+        pageLockManager.completeTransaction(tid);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
-        return false;
+        return pageLockManager.isHoldLock(p, tid);
     }
 
     /**

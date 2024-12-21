@@ -99,8 +99,13 @@ public class LockingTest extends TestUtil.CreateHeapFile {
     Thread.sleep(TIMEOUT);
     assertEquals(expected, t.acquired());
 
-    // TODO(ghuo): yes, stop() is evil, but this is unit test cleanup
-    t.stop();
+    //  yes, stop() is evil, but this is unit test cleanup
+    //t.stop();
+
+    // 使用 safeInterrupt() 代替 stop()
+    t.safeInterrupt();
+    // 等待线程结束
+    t.join();
   }
 
   /**

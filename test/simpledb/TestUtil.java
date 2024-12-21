@@ -344,8 +344,13 @@ public class TestUtil {
                 synchronized(elock) {
                     error = e;
                 }
-
                 Database.getBufferPool().transactionComplete(tid, false);
+            } finally {
+                // Ensure transaction completes even if interrupted
+                if (Thread.interrupted()) {
+                    System.out.println("Thread was interrupted during execution.");
+                    // Perform any necessary cleanup or flagging here
+                }
             }
         }
 
@@ -366,6 +371,13 @@ public class TestUtil {
             synchronized(elock) {
                 return error;
             }
+        }
+
+        /**
+         * Safely interrupt the thread
+         */
+        public void safeInterrupt() {
+            this.interrupt();
         }
     }
 
