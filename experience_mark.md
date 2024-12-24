@@ -305,7 +305,11 @@ ACID:
 
 ![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/a8e6b8c03d86cfee572ee02db5e8f3ba.png)
 
-获取锁通过Map存储记录，利用synchronized实现(TODO)
+锁管理通过Map存储记录，直接通过`ConcurrentHashMap`管理锁和事务之间的关系。
+
+利用synchronized保证对共享资源（如锁状态）的并发访问是安全的。
+
+（可以对每个页面写一个reentrantlock，通过显式的`ReentrantLock`来控制，实现防止多个线程同时修改同一个页，更简单些）
 
 采用了自旋的方式不断获取锁，并设置一个获取锁的超时时间，超过这个时间了就抛出异常。
 
@@ -324,3 +328,34 @@ ACID:
 ​	读取某页前，需要获取页面的共享锁；写入某页前，需要获取页面的互斥锁。我们可以发现在getPage()方法中，已经通过Permissions对象来确定对页的操作类型；Permission对象也表明了当我们访问对象前需要获取哪种类型的锁。
 
 ​	如果一个事务t在页p上找不到空槽，事务t应该立即释放页p的锁。虽然这显然与两阶段锁定的规则相矛盾，但这是可以的，因为事务t没有使用页面中的任何数据，因为更新p的并发事务t不可能影响t的答案或者结果。
+
+## ex3
+
+被修改的脏页不能被替换算法从BufferPool中替换出去，增加一条对Page是否是脏页的判断即可，遇到脏页不能进行任何操作，直接找下个页，全是脏页就得抛异常。
+
+//驱逐之前缓存池中是有pagesize+1个页面的，新加入的页面是head.next，所以遍历到head.next即可
+
+//对于testAllDirtyFails测试用例，读的时候会从表的起始开始读，一定会有一个刚读的不脏的页面在队头( ？？？待确认)  
+
+## ex4
+
+- 当进行提交时，进行一次指定TransactionId的刷盘；
+- 当进行回滚时，从BufferPool中清除掉该事务造成的脏页，并将原始版本重新读到BufferPool中。
+- 当事务提交或者终止时，应该释放BufferPool中保留的关于事务的任何状态，包括释放事务持有的任何锁
+
+页面判脏时可以得到事务id，根据这一点来查询需要处理的关于事务id的页面。
+
+## ex5
+
+超时判断死锁
+
+TODO 基于循环依赖图的死锁判定和解除
+
+
+
+```
+// sleep to get some interesting thread interleavings
+Thread.sleep(1);
+```
+
+这个会导致运行很久？testTenThreads运行了48分钟才成功

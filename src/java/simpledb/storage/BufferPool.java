@@ -110,8 +110,6 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        /*long st = System.currentTimeMillis();
-        Lock lock = new ReentrantLock();*/
         int acquireType = perm == Permissions.READ_ONLY ? PageLockManager.PageLock.SHARE : PageLockManager.PageLock.EXCLUSIVE;
         long start = System.currentTimeMillis();
         while (true) {
@@ -121,6 +119,9 @@ public class BufferPool {
                     if(node == null){
                         DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
                         Page page = dbFile.readPage(pid);
+                        if(perm==Permissions.READ_WRITE){
+                            page.markDirty(true, tid);
+                        }
                         LRUnode newNode = new LRUnode(pid, page);
                         pageCache.put(pid, newNode);
                         addHead(newNode);
@@ -129,6 +130,9 @@ public class BufferPool {
                         }
                         return newNode.page;
                     }else{
+                        if(perm==Permissions.READ_WRITE){
+                            node.page.markDirty(true, tid);
+                        }
                         moveToHead(node);
                         return node.page;
                     }
@@ -137,8 +141,6 @@ public class BufferPool {
                 e.printStackTrace();
             } catch (IOException e) {
                 throw new RuntimeException(e);
-            }finally {
-                //pageLockManager.releaseLock(pid, tid);
             }
             // 如果未能获取到锁，判断是否超时
             long now = System.currentTimeMillis();
@@ -177,7 +179,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) {
         // some code goes here
         // not necessary for lab1|lab2
-        pageLockManager.completeTransaction(tid);
+        transactionComplete(tid, true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -197,6 +199,34 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid, boolean commit) {
         // some code goes here
         // not necessary for lab1|lab2
+        if (commit) {
+            try {
+                flushPages(tid);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        } else {
+            // 回滚事务,从磁盘加载旧页完成回滚
+            restorePages(tid);
+        }
+        pageLockManager.completeTransaction(tid);
+    }
+
+    private synchronized void restorePages(TransactionId tid) {
+        for (Map.Entry<PageId, LRUnode> entry : pageCache.entrySet()) {
+            PageId pid = entry.getKey();
+            Page page = entry.getValue().page;
+            if (page.isDirty() == tid) {
+                discardPage(pid);
+                try {
+                    getPage(tid, pid, Permissions.READ_ONLY);
+                } catch (TransactionAbortedException e) {
+                    throw new RuntimeException(e);
+                } catch (DbException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
     }
 
     /**
@@ -300,6 +330,13 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        for (Map.Entry<PageId, LRUnode> entry : pageCache.entrySet()) {
+            Page page = entry.getValue().page;
+            //page.setBeforeImage();
+            if (page.isDirty() == tid) {
+                flushPage(page.getId());
+            }
+        }
     }
 
     /**
@@ -309,7 +346,16 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException, IOException {
         // some code goes here
         // not necessary for lab1
-        LRUnode rm = removeTail();
+        LRUnode rm = tail.prev;
+        while (rm != head.next && rm.page.isDirty() != null) {
+            rm = rm.prev;
+        }
+        //TODO 驱逐之前缓存池中是有pagesize+1个页面的，新加入的页面是head.next，所以遍历到head.next即可（不是head)
+        //对于testAllDirtyFails测试用例，读的时候会从表的起始开始读，一定会有一个刚读的不脏的页面在队头  ？？？
+        if(rm == head.next){
+            throw new DbException("all pages are dirty");
+        }
+        removeNode(rm);
         flushPage(rm.pid);
         pageCache.remove(rm.pid);
         rm.page.markDirty(false, null);
