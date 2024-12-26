@@ -42,7 +42,7 @@ public class BTreeEntry implements Serializable {
 	/**
 	 * The record id of this entry
 	 * */
-	private RecordId rid; // null if not stored on any page
+	private RecordId rid; // null if not stored on any page 标识该entry所在的位置。（即该entry是哪个page中的）
 
 	/**
 	 * Constructor to create a new BTreeEntry

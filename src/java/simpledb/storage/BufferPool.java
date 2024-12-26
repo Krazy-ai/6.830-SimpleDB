@@ -12,7 +12,10 @@ import java.io.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -41,7 +44,9 @@ public class BufferPool {
     private PageLockManager pageLockManager;
     private final Integer numPages;
     private final Map<PageId, LRUnode> pageCache;
-
+    private final Map<Long, Integer> tRandomTimeout = new ConcurrentHashMap<>();//并发
+    private static final int TIMEOUT_MILLISECONDS = 1500; // 认为死锁超时的时间
+    private final Random randomTimeout = new Random();
     private LRUnode head;
     private LRUnode tail;
 
@@ -115,26 +120,31 @@ public class BufferPool {
         while (true) {
             try {
                 if (pageLockManager.acquireLock(pid, tid, acquireType)) {
-                    LRUnode node = pageCache.getOrDefault(pid, null);
-                    if(node == null){
-                        DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
-                        Page page = dbFile.readPage(pid);
-                        if(perm==Permissions.READ_WRITE){
-                            page.markDirty(true, tid);
+                    mapMonitor.lock();
+                    try {
+                        LRUnode node = pageCache.getOrDefault(pid, null);
+                        if(node == null){
+                            DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+                            Page page = dbFile.readPage(pid);
+                            if(perm==Permissions.READ_WRITE){
+                                page.markDirty(true, tid);
+                            }
+                            LRUnode newNode = new LRUnode(pid, page);
+                            pageCache.put(pid, newNode);
+                            addHead(newNode);
+                            if (pageCache.size() > numPages) {
+                                evictPage();
+                            }
+                            return newNode.page;
+                        }else{
+                            if(perm==Permissions.READ_WRITE){
+                                node.page.markDirty(true, tid);
+                            }
+                            moveToHead(node);
+                            return node.page;
                         }
-                        LRUnode newNode = new LRUnode(pid, page);
-                        pageCache.put(pid, newNode);
-                        addHead(newNode);
-                        if (pageCache.size() > numPages) {
-                            evictPage();
-                        }
-                        return newNode.page;
-                    }else{
-                        if(perm==Permissions.READ_WRITE){
-                            node.page.markDirty(true, tid);
-                        }
-                        moveToHead(node);
-                        return node.page;
+                    } finally {
+                        mapMonitor.unlock();
                     }
                 }
             } catch (InterruptedException e) {
@@ -144,18 +154,25 @@ public class BufferPool {
             }
             // 如果未能获取到锁，判断是否超时
             long now = System.currentTimeMillis();
-            if (now - start > 500) {
+            if (now - start > getTransactionTimeout(tid.getId())) {
                 throw new TransactionAbortedException();
             }
             //添加短暂的休眠，避免 CPU 过度占用
+            // 随机化减少竞争
             try {
-                Thread.sleep(10);
+                Thread.sleep(20 + ThreadLocalRandom.current().nextInt(60));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();// 中断处理
             }
         }
     }
 
+    // 随机化超时时间
+    private int getTransactionTimeout(long tid) {
+        tRandomTimeout.putIfAbsent(tid, randomTimeout.nextInt(1000) + TIMEOUT_MILLISECONDS);
+        Integer res = tRandomTimeout.get(tid); // 以防并发问题
+        return res == null ? TIMEOUT_MILLISECONDS : res;
+    }
     /**
      * Releases the lock on a page.
      * Calling this is very risky, and may result in wrong behavior. Think hard
@@ -210,6 +227,7 @@ public class BufferPool {
             restorePages(tid);
         }
         pageLockManager.completeTransaction(tid);
+        tRandomTimeout.remove(tid.getId());
     }
 
     private synchronized void restorePages(TransactionId tid) {

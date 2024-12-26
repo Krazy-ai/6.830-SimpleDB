@@ -134,93 +134,92 @@ public class PageLockManager {
             }
         }
 
-        /**
-         * final String lockType = acquireType == 0 ? "read lock" : "write lock";
-         *         final String threadName = Thread.currentThread().getName();
-         *         // 获取当前页面上已经添加的锁
-         *         Map<TransactionId, PageLock> lockMap = pageLockMap.get(pageId);
-         *         // 当前page还没有加过锁
-         *         if (lockMap == null || lockMap.size() == 0) {
-         *             PageLock pageLock = new PageLock(acquireType, tid);
-         *             lockMap = new ConcurrentHashMap<>();
-         *             lockMap.put(tid, pageLock);
-         *             // 记录当前页面被当前事务加了一把什么样的锁
-         *             pageLockMap.put(pageId, lockMap);
-         *             System.out.println(threadName + ": the" + pageId + "have no lock, transaction " + tid + " require" + lockType + " success");
-         *             return true;
-         *         }
-         *         // 获取当前事务在当前页面上加的锁
-         *         PageLock lock = lockMap.get(tid);
-         *         // 当前事务在当前page上加过锁了
-         *         if (lock != null) {
-         *             // 当前事务希望在当前page上加读锁,此时无论lock是读锁还是写锁都可以加锁成功
-         *             if (acquireType == PageLock.SHARE) {
-         *                 System.out.println(threadName + ": the" + pageId + "have read lock with the same tid, transaction " + tid + " require" + lockType + " success");
-         *                 return true;
-         *             }
-         *             // 如果当前事务想要加独占锁
-         *             else if (acquireType == PageLock.EXCLUSIVE) {
-         *                 // 存在其他事务在当前页面上加了读锁 --> 直接抛出异常,防止等待锁升级产生死锁问题
-         *                 if (lockMap.size() > 1) {
-         *                     System.out.println(threadName + ": the" + pageId + "have many read locks, transaction " + tid + " require" + lockType + " fail");
-         *                     throw new TransactionAbortedException();
-         *                 }
-         *                 //  当前事务在当前页面上已经加了写锁
-         *                 if (lockMap.size() == 1 && lock.getType() == PageLock.EXCLUSIVE) {
-         *                     System.out.println(threadName + ": the" + pageId + "have write lock with the same tid, transaction " + tid + " require" + lockType + " success");
-         *                     return true;
-         *                 }
-         *                 // 当前页面只存在当前事务加的读锁--进行锁升级
-         *                 if (lockMap.size() == 1 && lock.getType() == PageLock.SHARE) {
-         *                     lock.setType(PageLock.EXCLUSIVE);
-         *                     lockMap.put(tid, lock);
-         *                     pageLockMap.put(pageId, lockMap);
-         *                     System.out.println(threadName + ": the" + pageId + "have read lock with the same tid, transaction " +
-         *                             tid + " require" + lockType + " success and upgrade");
-         *                     return true;
-         *                 }
-         *             }
-         *         }
-         *
-         *         // 当前事务在当前page没加过锁
-         *         if (lock == null) {
-         *             // 如果当前事务想要加共享锁
-         *             if (acquireType == PageLock.SHARE) {
-         *                 // 当前页面已经被其他事务加了读锁,此处的读锁也可以直接加
-         *                 if (lockMap.size() > 1) {
-         *                     PageLock pageLock = new PageLock(acquireType, tid);
-         *                     lockMap.put(tid, pageLock);
-         *                     pageLockMap.put(pageId, lockMap);
-         *                     System.out.println(threadName + ": the" + pageId + "have many read locks, transaction " + tid + " require" + lockType + " success");
-         *                     return true;
-         *                 }
-         *                 // 当前页面上只存在其他事务添加的一把锁,判断这把锁的类型是什么
-         *                 PageLock l = null;
-         *                 for (PageLock value : lockMap.values()) {
-         *                     l = value;
-         *                 }
-         *                 // 如果这把锁的类型是读锁,那么这里直接添加成功
-         *                 if (lockMap.size() == 1 && l.getType() == PageLock.SHARE) {
-         *                     PageLock pageLock = new PageLock(acquireType, tid);
-         *                     lockMap.put(tid, pageLock);
-         *                     pageLockMap.put(pageId, lockMap);
-         *                     System.out.println(threadName + ": the" + pageId + "have one lock with different tid, transaction " + tid + " require" + lockType + " success");
-         *                     return true;
-         *                 }
-         *                 // 如果这把锁是写锁,那么等待
-         *                 if (lockMap.size() == 1 && l.getType() == PageLock.EXCLUSIVE) {
-         *                     wait(50);
-         *                     return false;
-         *                 }
-         *             }
-         *             // 如果当前事务想要加写锁,那么直接等待 -- 因为当前页面上存在其他事务加的锁,无论锁类型是什么,都与写锁互斥,所以直接等待即可
-         *             if (acquireType == PageLock.EXCLUSIVE) {
-         *                 wait(10);
-         *                 return false;
-         *             }
-         *         }
-         *         return true;
-         */
+
+       /* final String lockType = acquireType == 0 ? "read lock" : "write lock";
+                final String threadName = Thread.currentThread().getName();
+                // 获取当前页面上已经添加的锁
+                Map<TransactionId, PageLock> lockMap = pageLockMap.get(pageId);
+                // 当前page还没有加过锁
+                if (lockMap == null || lockMap.size() == 0) {
+                    PageLock pageLock = new PageLock(acquireType, tid);
+                    lockMap = new ConcurrentHashMap<>();
+                    lockMap.put(tid, pageLock);
+                    // 记录当前页面被当前事务加了一把什么样的锁
+                    pageLockMap.put(pageId, lockMap);
+                    System.out.println(threadName + ": the" + pageId + "have no lock, transaction " + tid + " require" + lockType + " success");
+                    return true;
+                }
+                // 获取当前事务在当前页面上加的锁
+                PageLock lock = lockMap.get(tid);
+                // 当前事务在当前page上加过锁了
+                if (lock != null) {
+                    // 当前事务希望在当前page上加读锁,此时无论lock是读锁还是写锁都可以加锁成功
+                    if (acquireType == PageLock.SHARE) {
+                        System.out.println(threadName + ": the" + pageId + "have read lock with the same tid, transaction " + tid + " require" + lockType + " success");
+                        return true;
+                    }
+                    // 如果当前事务想要加独占锁
+                    else if (acquireType == PageLock.EXCLUSIVE) {
+                        // 存在其他事务在当前页面上加了读锁 --> 直接抛出异常,防止等待锁升级产生死锁问题
+                        if (lockMap.size() > 1) {
+                            System.out.println(threadName + ": the" + pageId + "have many read locks, transaction " + tid + " require" + lockType + " fail");
+                            throw new TransactionAbortedException();
+                        }
+                        //  当前事务在当前页面上已经加了写锁
+                        if (lockMap.size() == 1 && lock.getType() == PageLock.EXCLUSIVE) {
+                            System.out.println(threadName + ": the" + pageId + "have write lock with the same tid, transaction " + tid + " require" + lockType + " success");
+                            return true;
+                        }
+                        // 当前页面只存在当前事务加的读锁--进行锁升级
+                        if (lockMap.size() == 1 && lock.getType() == PageLock.SHARE) {
+                            lock.setType(PageLock.EXCLUSIVE);
+                            lockMap.put(tid, lock);
+                            pageLockMap.put(pageId, lockMap);
+                            System.out.println(threadName + ": the" + pageId + "have read lock with the same tid, transaction " +
+                                    tid + " require" + lockType + " success and upgrade");
+                            return true;
+                        }
+                    }
+                }
+
+                // 当前事务在当前page没加过锁
+                if (lock == null) {
+                    // 如果当前事务想要加共享锁
+                    if (acquireType == PageLock.SHARE) {
+                        // 当前页面已经被其他事务加了读锁,此处的读锁也可以直接加
+                        if (lockMap.size() > 1) {
+                            PageLock pageLock = new PageLock(acquireType, tid);
+                            lockMap.put(tid, pageLock);
+                            pageLockMap.put(pageId, lockMap);
+                            System.out.println(threadName + ": the" + pageId + "have many read locks, transaction " + tid + " require" + lockType + " success");
+                            return true;
+                        }
+                        // 当前页面上只存在其他事务添加的一把锁,判断这把锁的类型是什么
+                        PageLock l = null;
+                        for (PageLock value : lockMap.values()) {
+                            l = value;
+                        }
+                        // 如果这把锁的类型是读锁,那么这里直接添加成功
+                        if (lockMap.size() == 1 && l.getType() == PageLock.SHARE) {
+                            PageLock pageLock = new PageLock(acquireType, tid);
+                            lockMap.put(tid, pageLock);
+                            pageLockMap.put(pageId, lockMap);
+                            System.out.println(threadName + ": the" + pageId + "have one lock with different tid, transaction " + tid + " require" + lockType + " success");
+                            return true;
+                        }
+                        // 如果这把锁是写锁,那么等待
+                        if (lockMap.size() == 1 && l.getType() == PageLock.EXCLUSIVE) {
+                            wait(50);
+                            return false;
+                        }
+                    }
+                    // 如果当前事务想要加写锁,那么直接等待 -- 因为当前页面上存在其他事务加的锁,无论锁类型是什么,都与写锁互斥,所以直接等待即可
+                    if (acquireType == PageLock.EXCLUSIVE) {
+                        wait(10);
+                        return false;
+                    }
+                }
+                return true;*/
     }
 
     /**

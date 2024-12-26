@@ -358,4 +358,20 @@ TODO 基于循环依赖图的死锁判定和解除
 Thread.sleep(1);
 ```
 
-这个会导致运行很久？testTenThreads运行了48分钟才成功
+这个会导致运行很久？testTenThreads运行了48分钟才成功（对后面的实验有影响的话再来研究）
+
+# lab5
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/010706cfe2c7e8f096ac67776bf1565d.png)
+
+**磁盘上Header Page是懒初始化的，因此出现的位置是不固定的，Internal Page和Leaf Page同样如此，之所以可以这样，是因为存在一个root ptr page,它起到的作用就类似文件系统中的超级块:**![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/834ef728c9486a6916b82dd3bb3fdf92.png)
+
+内部节点可以看成保存着一个个**BTreeEntry**，内部节点对key的查找、插入、删除、迭代，都是以entry为单位的。通过BTreeEntry可以获取key、LeftChild、RightChild这三种信息，然后存入相应数组中。
+
+叶节点和内部节点不一样的地方在于，其保存的是一个个真正的数据，也就是保存着一个个Tuple。还有就是其的链表结构用于顺序查找。
+
+## ex1
+
+- 如果当前的节点就是叶节点了，那么直接返回，这里的叶节点要么是只有一个根节点，要么是进行递归所找到的叶节点；
+- 如果filed为空，则递归找到最左边的节点，用于迭代器；
+- 否则，就在当前这个内部节点进行查找，判断关键字的大小，从而进行下一步的递归。

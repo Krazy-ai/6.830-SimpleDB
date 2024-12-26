@@ -26,9 +26,9 @@ public class BTreeHeaderPage implements Page {
 	
 	final static int INDEX_SIZE = Type.INT_TYPE.getLen();
 
-	final BTreePageId pid;
-	final byte[] header;
-	final int numSlots;
+	final BTreePageId pid;  //当前节点的BTreePageId
+	final byte[] header;  //记录每一个page的使用情况，对应一个个pageNo
+	final int numSlots;   //记录能存储的page使用情况数量
 
 	private int nextPage; // next header page or 0
 	private int prevPage; // previous header page or 0

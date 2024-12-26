@@ -23,7 +23,8 @@ public class BTreeLeafPage extends BTreePage {
 	private final byte[] header;
 	private final Tuple[] tuples;
 	private final int numSlots;
-	
+
+	// 叶节点的双向链表结构，左右兄弟的pageNo，用于获取左右兄弟的BTreePageId
 	private int leftSibling; // leaf node or 0
 	private int rightSibling; // leaf node or 0
 

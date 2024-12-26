@@ -188,7 +188,26 @@ public class BTreeFile implements DbFile {
                                        Field f)
 					throws DbException, TransactionAbortedException {
 		// some code goes here
-        return null;
+		if(pid.pgcateg() == BTreePageId.LEAF){
+			return (BTreeLeafPage) getPage(tid,dirtypages, pid, perm);
+		}
+		BTreeInternalPage page = (BTreeInternalPage) getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
+		Iterator<BTreeEntry> internalIterator = page.iterator();
+		if(f==null){
+			return findLeafPage(tid, dirtypages, internalIterator.next().getLeftChild(), perm, f);
+		}else{
+			BTreeEntry next = null;
+			while(internalIterator.hasNext()){
+				next = internalIterator.next();
+				if(next.getKey().compare(Op.GREATER_THAN_OR_EQ, f)){
+					return findLeafPage(tid, dirtypages, next.getLeftChild(), perm, f);
+				}
+			}
+            if (next != null) {
+                return findLeafPage(tid,dirtypages,next.getRightChild(),perm,f);
+            }
+        }
+		return null;
 	}
 	
 	/**

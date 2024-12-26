@@ -25,8 +25,8 @@ import simpledb.storage.RecordId;
 public class BTreeInternalPage extends BTreePage {
 	private final byte[] header;
 	private final Field[] keys;
-	private final int[] children;
-	private final int numSlots;
+	private final int[] children;  //存储page的序号，用于获取左孩子、右孩子的BTreePageId
+	private final int numSlots;  //不是key的数量，而是内部节点中能存储的指针的数量（即n，内部节点中最多能存储key的数量为n-1）
 	
 	private int childCategory; // either leaf or internal
 
