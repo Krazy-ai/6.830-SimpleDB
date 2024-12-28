@@ -126,9 +126,9 @@ public class BufferPool {
                         if(node == null){
                             DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
                             Page page = dbFile.readPage(pid);
-                            if(perm==Permissions.READ_WRITE){
+                            /*if(perm==Permissions.READ_WRITE){
                                 page.markDirty(true, tid);
-                            }
+                            }*/
                             LRUnode newNode = new LRUnode(pid, page);
                             pageCache.put(pid, newNode);
                             addHead(newNode);
@@ -137,9 +137,11 @@ public class BufferPool {
                             }
                             return newNode.page;
                         }else{
+                            /*TODO 加上的话 BTreeFileInsertTest会报全脏页的错误
+                               （perm只用于区分读锁写锁，加入脏页的时机是在真正发生修改时？）
                             if(perm==Permissions.READ_WRITE){
                                 node.page.markDirty(true, tid);
-                            }
+                            }*/
                             moveToHead(node);
                             return node.page;
                         }
@@ -350,7 +352,7 @@ public class BufferPool {
         // not necessary for lab1|lab2
         for (Map.Entry<PageId, LRUnode> entry : pageCache.entrySet()) {
             Page page = entry.getValue().page;
-            //page.setBeforeImage();
+            page.setBeforeImage();
             if (page.isDirty() == tid) {
                 flushPage(page.getId());
             }
