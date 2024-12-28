@@ -366,19 +366,26 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException, IOException {
         // some code goes here
         // not necessary for lab1
-        LRUnode rm = tail.prev;
-        while (rm != head.next && rm.page.isDirty() != null) {
-            rm = rm.prev;
+        mapMonitor.lock();
+        try {
+            LRUnode rm = tail.prev;
+            while (rm != head.next && rm.page.isDirty() != null) {
+                rm = rm.prev;
+            }
+            //TODO 驱逐之前缓存池中是有pagesize+1个页面的，新加入的页面是head.next，所以遍历到head.next即可（不是head)
+            //对于testAllDirtyFails测试用例，读的时候会从表的起始开始读，一定会有一个刚读的不脏的页面在队头  ？？？
+            if(rm == head.next){
+                throw new DbException("all pages are dirty");
+            }
+            removeNode(rm);
+            flushPage(rm.pid);
+            pageCache.remove(rm.pid);
+            rm.page.markDirty(false, null);
+        } catch (DbException e) {
+            throw new RuntimeException(e);
+        } finally {
+            mapMonitor.unlock();
         }
-        //TODO 驱逐之前缓存池中是有pagesize+1个页面的，新加入的页面是head.next，所以遍历到head.next即可（不是head)
-        //对于testAllDirtyFails测试用例，读的时候会从表的起始开始读，一定会有一个刚读的不脏的页面在队头  ？？？
-        if(rm == head.next){
-            throw new DbException("all pages are dirty");
-        }
-        removeNode(rm);
-        flushPage(rm.pid);
-        pageCache.remove(rm.pid);
-        rm.page.markDirty(false, null);
     }
 
     void addHead(LRUnode node) {
