@@ -247,7 +247,7 @@ public class PageLockManager {
         System.out.println(threadName + " release " + lockType + " in " + pageId + ", the tid lock size is " + lockMap.size());
         if (lockMap.size() == 0) {
             pageLockMap.remove(pageId);
-            System.out.println(threadName + "release last lock, the page " + pageId + " have no lock, the page locks size is " + pageLockMap.size());
+            System.out.println(threadName + " release last lock, the page " + pageId + " have no lock, the page locks size is " + pageLockMap.size());
         }
         this.notifyAll();
     }

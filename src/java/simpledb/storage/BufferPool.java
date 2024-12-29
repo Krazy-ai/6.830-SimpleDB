@@ -381,8 +381,6 @@ public class BufferPool {
             flushPage(rm.pid);
             pageCache.remove(rm.pid);
             rm.page.markDirty(false, null);
-        } catch (DbException e) {
-            throw new RuntimeException(e);
         } finally {
             mapMonitor.unlock();
         }

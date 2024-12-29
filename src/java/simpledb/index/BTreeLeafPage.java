@@ -519,6 +519,13 @@ public class BTreeLeafPage extends BTreePage {
 			throw new NoSuchElementException();
 		}
 	}
+	@Override
+	public void clearPage() {
+		this.parent = 0;
+		this.leftSibling = 0;
+		this.rightSibling = 0;
+		Arrays.fill(header, (byte) 0);
+	}
 }
 
 /**

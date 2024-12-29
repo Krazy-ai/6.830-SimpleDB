@@ -671,6 +671,13 @@ public class BTreeInternalPage extends BTreePage {
 			throw new NoSuchElementException();
 		}
 	}
+
+	@Override
+	public void clearPage() {
+		this.parent = 0;
+		Arrays.fill(this.header, (byte) 0);
+		this.childCategory = 0;
+	}
 }
 
 /**

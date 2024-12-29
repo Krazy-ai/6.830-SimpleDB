@@ -332,6 +332,7 @@ public class BTreeFile implements DbFile {
 		// the parent pointers of all the children moving to the new page.  updateParentPointers()
 		// will be useful here.  Return the page into which an entry with the given key field
 		// should be inserted.
+		//TODO BTreeTest internal Page和leaf page都是最大124项，则最少半满为62项。恰好在整数时有问题
 		//1. 将当前page的后半部分放入新page
 		BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
 		int numEntries = page.getNumEntries();
@@ -977,7 +978,7 @@ public class BTreeFile implements DbFile {
 		int maxEmptySlots = parent.getMaxEntries() - parent.getMaxEntries()/2; // ceiling
 		if(parent.getNumEmptySlots() == parent.getMaxEntries()) {
 			// This was the last entry in the parent.
-			// In this case, the parent (root node) should be deleted, and the merged 
+			// In this case, the parent (root node) should be deleted, and the merged
 			// page will become the new root
 			BTreePageId rootPtrId = parent.getParentId();
 			if(rootPtrId.pgcateg() != BTreePageId.ROOT_PTR) {
@@ -996,8 +997,8 @@ public class BTreeFile implements DbFile {
 	}
 
 	/**
-	 * Delete a tuple from this BTreeFile. 
-	 * May cause pages to merge or redistribute entries/tuples if the pages 
+	 * Delete a tuple from this BTreeFile.
+	 * May cause pages to merge or redistribute entries/tuples if the pages
 	 * become less than half full.
 	 *
 	 * @param tid - the transaction id
@@ -1030,7 +1031,7 @@ public class BTreeFile implements DbFile {
 	 * if necessary.
 	 *
 	 * @param tid - the transaction id
-	 * @param dirtypages - the list of dirty pages which should be updated with all new dirty pages 
+	 * @param dirtypages - the list of dirty pages which should be updated with all new dirty pages
 	 * @return the root pointer page
 	 * @throws DbException
 	 * @throws IOException
@@ -1097,7 +1098,7 @@ public class BTreeFile implements DbFile {
 			}
 		}
 
-		// at this point if headerId is null, either there are no header pages 
+		// at this point if headerId is null, either there are no header pages
 		// or there are no free slots
 		if(headerId == null) {
 			synchronized(this) {
@@ -1116,7 +1117,7 @@ public class BTreeFile implements DbFile {
 
 	/**
 	 * Method to encapsulate the process of creating a new page.  It reuses old pages if possible,
-	 * and creates a new page if none are available.  It wipes the page on disk and in the cache and 
+	 * and creates a new page if none are available.  It wipes the page on disk and in the cache and
 	 * returns a clean copy locked with read-write permission
 	 *
 	 * @param tid - the transaction id
@@ -1136,21 +1137,47 @@ public class BTreeFile implements DbFile {
 		int emptyPageNo = getEmptyPageNo(tid, dirtypages);
 		BTreePageId newPageId = new BTreePageId(tableid, emptyPageNo, pgcateg);
 
+		// write empty page to disk. 哦!!! 已经将磁盘数据清空了
+		RandomAccessFile rf = new RandomAccessFile(f, "rw");
+		rf.seek(BTreeRootPtrPage.getPageSize() + (long) (emptyPageNo - 1) * BufferPool.getPageSize());
+		rf.write(BTreePage.createEmptyPageData());
+		rf.getFD().sync();
+		rf.close();
+
+		// make sure the page is not in the buffer pool	or in the local cache
+		Database.getBufferPool().discardPage(newPageId);
+		dirtypages.remove(newPageId);
+
+		Page page = getPage(tid, dirtypages, newPageId, Permissions.READ_WRITE);
+		// 清空数据
+		if(page instanceof BTreePage) {
+			((BTreePage) page).clearPage();
+		} else if (page instanceof BTreeHeaderPage) {
+			((BTreeHeaderPage) page).clearPage();
+		}
+		return page;
+	}
+	/*private Page getEmptyPage(TransactionId tid, Map<PageId, Page> dirtypages, int pgcateg)
+			throws DbException, IOException, TransactionAbortedException {
+		// create the new page
+		int emptyPageNo = getEmptyPageNo(tid, dirtypages);
+		BTreePageId newPageId = new BTreePageId(tableid, emptyPageNo, pgcateg);
+
 		// write empty page to disk
 		RandomAccessFile rf = new RandomAccessFile(f, "rw");
 		rf.seek(BTreeRootPtrPage.getPageSize() + (long) (emptyPageNo - 1) * BufferPool.getPageSize());
 		rf.write(BTreePage.createEmptyPageData());
 		rf.close();
 
-		// make sure the page is not in the buffer pool	or in the local cache		
+		// make sure the page is not in the buffer pool	or in the local cache
 		Database.getBufferPool().discardPage(newPageId);
 		dirtypages.remove(newPageId);
 
 		return getPage(tid, dirtypages, newPageId, Permissions.READ_WRITE);
-	}
+	}*/
 
 	/**
-	 * Mark a page in this BTreeFile as empty. Find the corresponding header page 
+	 * Mark a page in this BTreeFile as empty. Find the corresponding header page
 	 * (create it if needed), and mark the corresponding slot in the header page as empty.
 	 *
 	 * @param tid - the transaction id
@@ -1165,7 +1192,7 @@ public class BTreeFile implements DbFile {
 	public void setEmptyPage(TransactionId tid, Map<PageId, Page> dirtypages, int emptyPageNo)
 			throws DbException, IOException, TransactionAbortedException {
 
-		// if this is the last page in the file (and not the only page), just 
+		// if this is the last page in the file (and not the only page), just
 		// truncate the file
 		// @TODO: Commented out because we should probably do this somewhere else in case the transaction aborts....
 //		synchronized(this) {
@@ -1185,7 +1212,7 @@ public class BTreeFile implements DbFile {
 //			}
 //		}
 
-		// otherwise, get a read lock on the root pointer page and use it to locate 
+		// otherwise, get a read lock on the root pointer page and use it to locate
 		// the first header page
 		BTreeRootPtrPage rootPtr = getRootPtrPage(tid, dirtypages);
 		BTreePageId headerId = rootPtr.getHeaderId();
@@ -1212,7 +1239,7 @@ public class BTreeFile implements DbFile {
 			headerPageCount++;
 		}
 
-		// at this point headerId should either be null or set with 
+		// at this point headerId should either be null or set with
 		// the headerPage containing the slot corresponding to emptyPageNo.
 		// Add header pages until we have one with a slot corresponding to emptyPageNo
 		while((headerPageCount + 1) * BTreeHeaderPage.getNumSlots() < emptyPageNo) {
@@ -1228,7 +1255,7 @@ public class BTreeFile implements DbFile {
 			prevId = headerId;
 		}
 
-		// now headerId should be set with the headerPage containing the slot corresponding to 
+		// now headerId should be set with the headerPage containing the slot corresponding to
 		// emptyPageNo
 		BTreeHeaderPage headerPage = (BTreeHeaderPage) getPage(tid, dirtypages, headerId, Permissions.READ_WRITE);
 		int emptySlot = emptyPageNo - headerPageCount * BTreeHeaderPage.getNumSlots();
@@ -1250,8 +1277,8 @@ public class BTreeFile implements DbFile {
 	}
 
 	/**
-	 * Get an iterator for all tuples in this B+ tree file in sorted order. This method 
-	 * will acquire a read lock on the affected pages of the file, and may block until 
+	 * Get an iterator for all tuples in this B+ tree file in sorted order. This method
+	 * will acquire a read lock on the affected pages of the file, and may block until
 	 * the lock can be acquired.
 	 *
 	 * @param tid - the transaction id
