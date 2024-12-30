@@ -1,3 +1,51 @@
+# 6.830-SimpleDB
+
+Simple-DB是一个使用Java语言实现的简单关系型数据库。它仅支持整数和定长字符串数据类型，底层存储数据结构使用堆和B+树，拥有多种操作符和优化器，支持页面粒度锁定，支持事务且有rollback和recovery（事务隔离级别应该是Read Committed）。    
+
+有三个测试点未通过测试
+1. 单元测试BTreeNextKeyLockingTest中的nextKeyLockingTestGreaterThan()
+2. 系统测试 BTreeFileDeleteTest中的testRedistributeInternalPages()
+3. 系统测试BTreeTest
+   
+系统测试 TransactionTest 耗时过长
+
+猜测lab4中锁设计不够好，后期再来修改
+
+
+**各lab功能及实现过程中关于JAVA值得一说的地方**：
+
+Lab1：实现其中数据存储相关的类;
+
++ RandomAccessFile随机访问
+
+ Lab2：实现查询处理中的各种算子;
+
++ Operator、Insert和Delete 装饰器模式
++ LRU实现缓存池（延申->LRU优化）
+
+ Lab3：实现查询的优化相关的功能;
+
++ 直方图处理
++ 动态规划优化
++ 不同数据库实现的优化算法
+
+ Lab4：实现事务处理的相关功能;
+
++ 两段锁协议
++ 读写锁设计相关（延申->JUC相关）
+
+ Lab5：实现B+树索引;
+
++ B+树的各种操作
+
+ Lab6：实现回滚和恢复等功能;
+
++ rollback和recover的逻辑理清
+
+后三个lab都是简化实现，理清逻辑后就要延伸到数据库里面的八股。
+
+
+
 course-info
 ===========
 
@@ -226,3 +274,17 @@ Their contact information can be found on the [course homepage](http://db.csail.
 [resources]: https://help.github.com/articles/what-are-other-good-resources-for-learning-git-and-github
 
 [ssh-key]: https://help.github.com/articles/generating-ssh-keys
+
+参考：
+
+https://www.kwang.top/DB/simple_db
+
+https://blog.csdn.net/m0_53157173/category_12359831.html
+
+https://blog.csdn.net/qq_44766883/category_10078460.html
+
+https://zhuanlan.zhihu.com/p/161939974
+
+https://zhuanlan.zhihu.com/p/374956303
+
+https://zhuanlan.zhihu.com/p/399776712
