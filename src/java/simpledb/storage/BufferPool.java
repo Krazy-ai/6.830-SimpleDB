@@ -337,8 +337,8 @@ public class BufferPool {
         TransactionId dirtyTId = node.page.isDirty();
         if(dirtyTId != null) {
             DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
-            Database.getLogFile().logWrite(dirtyTId, node.page.getBeforeImage(), node.page);
-            Database.getLogFile().force();
+            Database.getLogFile().logWrite(dirtyTId, node.page.getBeforeImage(), node.page);//日志系统向日志中写入一条update记录
+            Database.getLogFile().force();//确保在脏页刷新到磁盘之前日志记录先记录到磁盘中
             dbFile.writePage(node.page);
             node.page.markDirty(false, null);
         }

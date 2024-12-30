@@ -420,3 +420,118 @@ if(perm==Permissions.READ_WRITE){
 
 部分测试点过不去，感觉锁设计有问题，或程序本身的问题（`BTreeTest internal Page和leaf page都是最大124项，则最少半满为62项。恰好在整数时有问题，为方便举例假设最大为4项，则最少半满为2项。假若此时一个internal Page keys为[3, 4, 8, 10]，此时下层叶节点分裂，向此内部节点插入6，注意splitInternalPage方法返回的是新项应该插入的节点，此时该如何分裂呢？如果分裂为[3, 4] 8 [10]，则将返回[3, 4]页面，6插入之，很遗憾[10]页面不合法；如果分裂为[3] 4 [8, 10]，则将返回[8, 10]页面，6插入之，很遗憾[3]页面不合法。所以需要进行一些特别的处理，我的代码将两个分裂的页面均返回，插入新项后再进行处理。`来自[剑神](https://www.kwang.top/DB/simple_db) ）
 
+# lab6
+
+​	SimpleDB自己实现了一套日志体系，相比于工业级数据库的日志系统要简单一些，不显式的区分UndoLog和RedoLog（更没有binLog这类日志了。。。），而是简单的将数据库的所有变更相关操作都记录其对应的事务Id和操作日志。这样在数据库需要回滚或者故障恢复时，只需要正向或反向重放事务的操作日志（取决于事务顺利执行完提交了、还是执行到一半、还是直接执行失败了），便可以实现回滚和恢复的目标。
+
+​	当页是首次读入时，代码记住了整页的原始内容做为前置镜像。当事务更新页时，相应的日志记录包含已存储的前置镜像以及修改后的页面做为后置镜像。我们将使用前置镜像在中止期间进行回滚，在recovery期间undo丢失的事务，后置镜像用于在recovery期间redo成功的事务。
+
+**steal/no-force策略**
+lab6要实现的是simpledb的日志系统，以支持回滚和崩溃恢复；在lab4事务中，我们并没有考虑事务执行过程中，如果机器故障或者停电了数据丢失的问题，bufferpool采用的是no-steal/force的策略，而这个实验我们实现的是steal/no-force策略，两种策略的区别如下:
+
++ steal/no-steal: 是否允许一个uncommitted的事务将修改更新到磁盘
+  + 如果是steal策略，那么此时磁盘上就可能包含uncommitted的数据，因此系统需要记录undo log，以防事务abort时进行回滚（roll-back）。
+  + 如果是no steal策略，就表示磁盘上不会存在uncommitted数据，因此无需回滚操作，也就无需记录undo log。
+
++ force/no-force:
+  + force策略表示事务在committed之后必须将所有更新立刻持久化到磁盘，这样会导致磁盘发生很多小的写操作（更可能是随机写）。
+  + no-force表示事务在committed之后可以不立即持久化到磁盘， 这样可以缓存很多的更新批量持久化到磁盘，这样可以降低磁盘操作次数（提升顺序写），但是如果committed之后发生crash，那么此时已经committed的事务数据将会丢失（因为还没有持久化到磁盘），因此系统需要记录redo log，在系统重启时候进行前滚（roll-forward）操作。
+
+simpledb的日志记录一共有5种：ABORT, COMMIT, UPDATE, BEGIN, and CHECKPOINT，分别记录事务失败、事务提交、写入磁盘前的脏页、事务开始、检测点，这些格式的日志都记录在同一个日志文件中；
+
+![img](https://pic4.zhimg.com/v2-8118c7489874d20e98ad48ca20515c39_1440w.jpg)![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/7187f236f5ac5a6df32a1c80328309c3.png)
+
+文件的最开头是最新的CheckPoint日志的偏移量，然后才是各种日志。
+
+**tidToFirstLogRecord **:开始BEGIN日志的时候会往map里put一个tid和对应的offset进去，在事务完成(COMMIT或ABORT)以后会删除这个map里对应的tid的记录。所以这个map里实际上保存的是正在进行的事务的BeginOffset。
+
+对于redo log，为确保事务的持久性，redo log需要事务操作的变化，simpledb中用UPDATE格式的日志来保存数据的变化，在每次将数据页写入磁盘前需要用logWrite方法来记录变化
+
+对于undo log，我们采用的是在page中使用一个变量oldData保存一份当前页旧的快照数据
+
+## ex1
+
+- 根据tidToFirstLogRecord获取该事务第一条记录的位置，并移动到日志开始的地方；
+- 读取每一条日志，如果不是当前事务的日志就跳过；否则判断是否是update record，是的话就取出其before data并进行刷盘。
+
+## ex2
+
+这里有两步跳跃：从文件开头跳到最后一个CheckPoint的位置，再从CheckPoint逐个跳到对应的Transaction Begin日志的位置。
+
+因为tidToFirstLogRecord是一个map，只能记录一个事务的最近的BeginOffset，不一定是UPDATE，所以难以得到它的before和after；所以记录CheckPoint的位置，仿照logTruncate()，从未提交的事务的开头开始遍历，并与CheckPoint位置比较，判断在前或在后。
+
++ 事务t在CheckPoint前begin，且没有在CheckPoint前commit或abort：
+
+  + 在CheckPoint后commit的需要redo；
+
+  + 在CheckPoint后abort的需要undo；
+
+  + 在CheckPoint后什么都没做的需要undo。
+
++ 如果在CheckPoint前已经commit或abort，已经刷盘，不管它；
++ 事务t在CheckPoint后begin，或不存在CheckPoint，只把commit的tid redo刷盘即可，未提交和abort的都直接忽视。
+
+
+
+# Summary
+
+2024.12.10~2024.12.30完成，有三个测试点未通过测试
+
+1. 单元测试BTreeNextKeyLockingTest中的nextKeyLockingTestGreaterThan()
+2. 系统测试 BTreeFileDeleteTest中的testRedistributeInternalPages()
+3. 系统测试BTreeTest
+
+系统测试 TransactionTest 耗时过长
+猜测lab4中锁设计不够好，后期再来修改
+
+Simple-DB是一个使用Java语言实现的简单关系型数据库。它仅支持整数和定长字符串数据类型，底层存储数据结构使用堆和B+树，拥有多种操作符和优化器，支持页面粒度锁定，支持事务且有rollback和recovery（事务隔离级别应该是Read Committed）。
+
+经过这次lab的实现，暴露出很多javase薄弱的地方，也学到了很多东西。若只凭个人的浅薄水平，自主完成本lab绝对需要漫长的时间，所以实现过程中参考了网上博客的内容。实验给出了大部分的框架，各个lab之间的过渡相对平滑，并且很多地方规定了方便实现的简便方式，所以相比手搓难度还是降低了很多。前三个lab除了理解simpledb的结构外，最难的就是理清iterator。由于之前对迭代器的学习很少，做这块很折磨，不亚于后面的实验。后三个lab的难度就在“业务逻辑”上，毕竟是事务、索引、日志三大数据库关键功能。
+
+**各lab功能及实现过程中关于JAVA值得一说的地方**：
+
+Lab1：实现其中数据存储相关的类，然后还有一些其他东西比如Catalog和SeqScan;
+
++ RandomAccessFile随机访问
+
+ Lab2：实现查询处理中的各种算子;
+
++ Operator、Insert和Delete 装饰器模式
++ LRU实现缓存池（延申->LRU优化）
+
+ Lab3：实现查询的优化相关的功能;
+
++ 直方图处理
++ 动态规划优化
++ 不同数据库实现的优化算法
+
+ Lab4：实现事务处理的相关功能;
+
++ 两段锁协议
++ 读写锁设计相关（延申->JUC相关）
+
+ Lab5：实现B+树索引;
+
++ B+树的各种操作
+
+ Lab6：实现回滚和恢复等功能;
+
++ rollback和recover的逻辑理清
+
+后三个lab都是简化实现，理清逻辑后就要延伸到数据库里面的八股。
+
+
+
+参考：
+
+https://www.kwang.top/DB/simple_db
+
+https://blog.csdn.net/m0_53157173/category_12359831.html
+
+https://blog.csdn.net/qq_44766883/category_10078460.html
+
+https://zhuanlan.zhihu.com/p/161939974
+
+https://zhuanlan.zhihu.com/p/374956303
+
+https://zhuanlan.zhihu.com/p/399776712

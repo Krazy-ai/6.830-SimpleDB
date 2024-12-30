@@ -72,6 +72,10 @@ public class PageLockManager {
         final String threadName = Thread.currentThread().getName();
         // 获取当前页面上已经添加的锁
         Map<TransactionId, PageLock> lockMap = pageLockMap.get(pageId);
+        if(tid==null) {
+            //用于lab4之前的无事务测试
+            tid=new TransactionId();
+        }
         if(lockMap == null){
             lockMap = new ConcurrentHashMap<>();
             lockMap.put(tid, new PageLock(acquireType, tid));

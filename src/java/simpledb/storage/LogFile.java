@@ -107,7 +107,7 @@ public class LogFile {
         @param f The log file's name
     */
     public LogFile(File f) throws IOException {
-	this.logFile = f;
+	    this.logFile = f;
         raf = new RandomAccessFile(f, "rw");
         recoveryUndecided = true;
 
@@ -196,8 +196,7 @@ public class LogFile {
 
         @see Page#getBeforeImage
     */
-    public  synchronized void logWrite(TransactionId tid, Page before,
-                                       Page after)
+    public  synchronized void logWrite(TransactionId tid, Page before, Page after)
         throws IOException  {
         Debug.log("WRITE, offset = " + raf.getFilePointer());
         preAppend();
@@ -337,8 +336,10 @@ public class LogFile {
 
                 //once the CP is written, make sure the CP location at the
                 // beginning of the log file is updated
+
                 endCpOffset = raf.getFilePointer();
                 raf.seek(0);
+                //这里改了开头的NO_CHECKPOINT_ID
                 raf.writeLong(startCpOffset);
                 raf.seek(endCpOffset);
                 raf.writeLong(currentOffset);
@@ -359,6 +360,7 @@ public class LogFile {
 
         long minLogRecord = cpLoc;
 
+        //这里的-1是文件开头preAppend的NO_CHECKPOINT_ID
         if (cpLoc != -1L) {
             raf.seek(cpLoc);
             int cpType = raf.readInt();
@@ -454,12 +456,47 @@ public class LogFile {
 
         @param tid The transaction to rollback
     */
-    public void rollback(TransactionId tid)
-        throws NoSuchElementException, IOException {
+    public void rollback(TransactionId tid) throws NoSuchElementException, IOException {
         synchronized (Database.getBufferPool()) {
             synchronized(this) {
                 preAppend();
                 // some code goes here
+                Long begin = tidToFirstLogRecord.get(tid.getId());
+                raf.seek(begin);
+                while(raf.getFilePointer() != raf.length()){
+                    int type = raf.readInt();
+                    long curTid = raf.readLong();
+                    if (type == CHECKPOINT_RECORD) {
+                        int count = raf.readInt();
+                        while (count-- > 0) {
+                            raf.readLong();
+                            raf.readLong();
+                        }
+                    }
+                    if(curTid != tid.getId()){
+                        //如果不是当前的tid，就直接跳过
+                        if(type==UPDATE_RECORD){
+                            //update record 还要跳过页数据
+                            readPageData(raf);
+                            readPageData(raf);
+                        }
+                    }else{
+                        if(type==UPDATE_RECORD){
+                            //只需要恢复到最初的状态就行
+                            Page before = readPageData(raf);
+                            Page after = readPageData(raf);
+                            DbFile databaseFile = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                            databaseFile.writePage(before);
+                            Database.getBufferPool().discardPage(after.getId());
+                            raf.readLong();
+                            break;
+                        }
+                    }
+                    //每个日志记录的最后都有一个 long 类型的起始偏移量（8个字节）
+                    raf.readLong();
+                }
+                // 将raf的文件指针指向正确的偏移位置
+                raf.seek(raf.length());
             }
         }
     }
@@ -487,6 +524,102 @@ public class LogFile {
             synchronized (this) {
                 recoveryUndecided = false;
                 // some code goes here
+                HashMap<Long, List<Event>> tidEventMap = new HashMap<>();
+                long afterCheckPoint = LONG_SIZE;
+                long startPos = LONG_SIZE; // 开始re-do/un-do的位置
+                raf.seek(0);
+                //print();
+                long checkpoint = raf.readLong();
+                if(checkpoint!=NO_CHECKPOINT_ID){
+                    long minLogRecord = Long.MAX_VALUE;
+                    raf.seek(checkpoint);
+                    int cpType = raf.readInt();
+                    raf.skipBytes(LONG_SIZE);
+
+                    if (cpType != CHECKPOINT_RECORD) {
+                        throw new RuntimeException("Checkpoint pointer does not point to checkpoint record");
+                    }
+
+                    int numOutstanding = raf.readInt();
+                    for (int i = 0; i < numOutstanding; i++) {
+                        raf.skipBytes(LONG_SIZE);
+                        long firstLogRecord = raf.readLong();
+                        if (firstLogRecord < minLogRecord) {
+                            minLogRecord = firstLogRecord;
+                        }
+                    }
+                    afterCheckPoint = raf.getFilePointer();
+                    startPos = minLogRecord;
+                }
+                raf.seek(startPos);
+                HashSet<Long> afterCPBegin = new HashSet<>();
+                while(raf.getFilePointer()!=raf.length()){
+                    int type = raf.readInt();
+                    long curTid = raf.readLong();
+                    switch (type) {
+                        case BEGIN_RECORD:{
+                            if(raf.getFilePointer()>afterCheckPoint)
+                                afterCPBegin.add(curTid);
+                            break;
+                        }
+                        case COMMIT_RECORD:{
+                            List<Event> eventList = tidEventMap.get(curTid);
+                            if(eventList!=null) {
+                                for (Event event : eventList) {
+                                    if (event.type == UPDATE_RECORD) {
+                                        Page before = event.before;
+                                        Page after = event.after;
+                                        DbFile databaseFile = Database.getCatalog().getDatabaseFile(after.getId().getTableId());
+                                        databaseFile.writePage(after);
+                                        Database.getBufferPool().discardPage(before.getId());
+                                    }
+                                }
+                                tidEventMap.entrySet().removeIf(entry -> entry.getKey()==curTid);
+                            }
+                            break;
+                        }
+                        case UPDATE_RECORD:{
+                            Page before = readPageData(raf);
+                            Page after = readPageData(raf);
+                            List<Event> eventList = tidEventMap.getOrDefault(curTid, new ArrayList<>());
+                            eventList.add(new Event(type,curTid,before,after));
+                            tidEventMap.put(curTid,eventList);
+                            break;
+                        }
+                        default:{
+                            if(!afterCPBegin.contains(curTid)) {
+                                List<Event> eventList = tidEventMap.get(curTid);
+                                if(eventList!=null) {
+                                    for (Event event : eventList) {
+                                        if (event.type == UPDATE_RECORD) {
+                                            Page before = event.before;
+                                            Page after = event.after;
+                                            DbFile databaseFile = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                                            databaseFile.writePage(before);
+                                            Database.getBufferPool().discardPage(after.getId());
+                                        }
+                                    }
+                                }
+                                tidEventMap.entrySet().removeIf(entry -> entry.getKey()==curTid);
+                            }
+                        }
+                    }
+                    raf.readLong();
+                }
+                // 没终止也没提交的页面，全都rollback
+                for (Map.Entry<Long, List<Event>> entry : tidEventMap.entrySet()) {
+                    if (!afterCPBegin.contains(entry.getKey())) {
+                        for (Event event : entry.getValue()) {
+                            if (event.type == UPDATE_RECORD) {
+                                Page before = event.before;
+                                Page after = event.after;
+                                DbFile databaseFile = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                                databaseFile.writePage(before);
+                                Database.getBufferPool().discardPage(after.getId());
+                            }
+                        }
+                    }
+                }
             }
          }
     }
@@ -571,4 +704,23 @@ public class LogFile {
         raf.getChannel().force(true);
     }
 
+    public class Event {
+        public int type;
+        public long tid;
+        public Page before;
+        public Page after;
+
+        public Event(int type, long tid) {
+            this.type = type;
+            this.tid = tid;
+            this.before = null;
+            this.after = null;
+        }
+        public Event(int type, long tid, Page before, Page after) {
+            this.type = type;
+            this.tid = tid;
+            this.before = before;
+            this.after = after;
+        }
+    }
 }
