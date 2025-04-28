@@ -51,6 +51,10 @@ public class HeapPage implements Page {
         this.pid = id;
         this.td = Database.getCatalog().getTupleDesc(id.getTableId());
         this.numSlots = getNumTuples();
+        //todo 元组记录过大，有这种情况吗?
+        if(this.numSlots<1){
+            throw new IOException("tuple size too large");
+        }
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data));
 
         // allocate and read the header slots of this page
@@ -282,6 +286,10 @@ public class HeapPage implements Page {
         if(!td.equals(t.getTupleDesc())){
             throw new DbException("tuple desc mismatch");
         }
+        //todo 元组记录过大，有这种情况吗?
+        if(t.getTupleDesc().getSize()>BufferPool.getPageSize()){
+            throw new DbException("tuple size too large");
+        }
         int slotId = -1;
         for (int i=0; i<numSlots; i++) {
             if (!isSlotUsed(i)) {
@@ -289,8 +297,9 @@ public class HeapPage implements Page {
                 break;
             }
         }
-        if (slotId == -1)
+        if (slotId == -1) {
             throw new DbException("page full");
+        }
         markSlotUsed(slotId, true);
         t.setRecordId(new RecordId(pid, slotId));
         tuples[slotId] = t;

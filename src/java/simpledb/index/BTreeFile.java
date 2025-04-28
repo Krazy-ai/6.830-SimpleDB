@@ -31,7 +31,7 @@ public class BTreeFile implements DbFile {
 	private final File f;
 	private final TupleDesc td;
 	private final int tableid ;
-	private final int keyField;
+	private final int keyField;//指明 B+ 树索引所依据的字段
 
 	/**
 	 * Constructs a B+ tree file backed by the specified file.
@@ -193,7 +193,8 @@ public class BTreeFile implements DbFile {
 		}
 		BTreeInternalPage page = (BTreeInternalPage) getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
 		Iterator<BTreeEntry> internalIterator = page.iterator();
-		if(f==null){
+		if(f == null){
+			//filed为空，则递归找到最左边的节点，用于迭代器
 			return findLeafPage(tid, dirtypages, internalIterator.next().getLeftChild(), perm, f);
 		}else{
 			BTreeEntry next = null;

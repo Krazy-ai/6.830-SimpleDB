@@ -540,10 +540,10 @@ public class LogFile {
                         throw new RuntimeException("Checkpoint pointer does not point to checkpoint record");
                     }
 
-                    int numOutstanding = raf.readInt();
+                    int numOutstanding = raf.readInt(); //活跃事务数量
                     for (int i = 0; i < numOutstanding; i++) {
                         raf.skipBytes(LONG_SIZE);
-                        long firstLogRecord = raf.readLong();
+                        long firstLogRecord = raf.readLong();   //每个活跃事务的第一条日志的偏移量
                         if (firstLogRecord < minLogRecord) {
                             minLogRecord = firstLogRecord;
                         }

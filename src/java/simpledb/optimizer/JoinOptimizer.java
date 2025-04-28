@@ -359,6 +359,7 @@ public class JoinOptimizer {
         if (this.p.getTableId(j.t2Alias) == null)
             throw new ParsingException("Unknown table " + j.t2Alias);
 
+        //1. 获取joinToRemove节点的基本信息
         String table1Name = Database.getCatalog().getTableName(
                 this.p.getTableId(j.t1Alias));
         String table2Name = Database.getCatalog().getTableName(
@@ -373,7 +374,9 @@ public class JoinOptimizer {
         int t1card, t2card;
         boolean leftPkey, rightPkey;
 
+        //2. 生成一个连接方案
         if (news.isEmpty()) { // base case -- both are base relations
+            //2.1 当只有一个joinToRemove节点时，该节点本身就是一个连接方案
             prevBest = new ArrayList<>();
             t1cost = stats.get(table1Name).estimateScanCost();
             t1card = stats.get(table1Name).estimateTableCardinality(
@@ -388,6 +391,7 @@ public class JoinOptimizer {
             rightPkey = table2Alias != null && isPkey(table2Alias,
                     j.f2PureName);
         } else {
+            //2.2 当有多个节点时，先获取删除了joinToRemove节点后的joinSet的子最佳方案
             // news is not empty -- figure best way to join j to news
             prevBest = pc.getOrder(news);
 
@@ -400,8 +404,12 @@ public class JoinOptimizer {
             double prevBestCost = pc.getCost(news);
             int bestCard = pc.getCard(news);
 
+            // 然后再生成joinToRemove节点的表与子最佳方案进行连接的方案
+            // 如果joinToRemove节点左表在子最佳方案中，左表=子最佳方案，右表=joinToRemove节点右表
+            // 否则如果joinToRemove节点右表在最佳方案中，左表=joinToRemove节点左表，右表=子最佳方案
             // estimate cost of right subtree
             if (doesJoin(prevBest, table1Alias)) { // j.t1 is in prevBest
+                //当joinToRemove的t1在prevBest中
                 t1cost = prevBestCost; // left side just has cost of whatever
                                        // left
                 // subtree is
@@ -418,6 +426,7 @@ public class JoinOptimizer {
             } else if (doesJoin(prevBest, j.t2Alias)) { // j.t2 is in prevbest
                                                         // (both
                 // shouldn't be)
+                //当joinToRemove的t2在prevBest中
                 t2cost = prevBestCost; // left side just has cost of whatever
                                        // left
                 // subtree is
@@ -435,9 +444,11 @@ public class JoinOptimizer {
             }
         }
 
+        //3. 计算当前连接方案的cost
         // case where prevbest is left
         double cost1 = estimateJoinCost(j, t1card, t2card, t1cost, t2cost);
 
+        //4. 交换一次join两边顺序，再计算cost，并比较两次的cost得到最佳方案
         LogicalJoinNode j2 = j.swapInnerOuter();
         double cost2 = estimateJoinCost(j2, t2card, t1card, t2cost, t1cost);
         if (cost2 < cost1) {
@@ -451,6 +462,7 @@ public class JoinOptimizer {
         if (cost1 >= bestCostSoFar)
             return null;
 
+        //5. 生成最终结果
         CostCard cc = new CostCard();
 
         cc.card = estimateJoinCardinality(j, t1card, t2card, leftPkey,

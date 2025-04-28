@@ -85,10 +85,13 @@ public class HeapFile implements DbFile {
         // some code goes here
         long offset = (long) pid.getPageNumber() * BufferPool.getPageSize();
         Page page;
-        try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
-            byte[] data = new byte[BufferPool.getPageSize()];
-            randomAccessFile.seek(offset);
-            randomAccessFile.read(data);
+        try (FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.READ)) {
+            ByteBuffer buffer = ByteBuffer.allocate(BufferPool.getPageSize());
+            channel.position(offset);
+            channel.read(buffer);
+            buffer.flip();
+            byte[] data = new byte[buffer.remaining()];
+            buffer.get(data);
             page = new HeapPage((HeapPageId) pid, data);
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -102,9 +105,10 @@ public class HeapFile implements DbFile {
         // not necessary for lab1
         HeapPageId pageId =(HeapPageId) page.getId();
         long offset = (long) pageId.getPageNumber() * BufferPool.getPageSize();
-        try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw")) {
-            randomAccessFile.seek(offset);
-            randomAccessFile.write(ByteBuffer.wrap(page.getPageData()).array());
+        try (FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.WRITE, StandardOpenOption.READ)) {
+            ByteBuffer buffer = ByteBuffer.wrap(page.getPageData());
+            channel.position(offset);
+            channel.write(buffer);
         }catch (IOException e) {
             throw new IOException(e);
         }
@@ -122,9 +126,10 @@ public class HeapFile implements DbFile {
     private void appendEmptyPage() throws IOException {
         HeapPageId newPageId = new HeapPageId(getId(), numPages);
         long offset = (long) newPageId.getPageNumber() * BufferPool.getPageSize();
-        try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw")) {
-            randomAccessFile.seek(offset);
-            randomAccessFile.write(ByteBuffer.wrap(HeapPage.createEmptyPageData()).array());
+        try (FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.WRITE, StandardOpenOption.READ)) {
+            ByteBuffer buffer = ByteBuffer.wrap(HeapPage.createEmptyPageData());
+            channel.position(offset);
+            channel.write(buffer);
         }catch (IOException e) {
             throw new IOException(e);
         }

@@ -333,11 +333,13 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         LRUnode node = pageCache.get(pid);
-        if(node == null) return;
-        TransactionId dirtyTId = node.page.isDirty();
-        if(dirtyTId != null) {
+        if(node == null) {
+            return;
+        }
+        TransactionId dirtyTid = node.page.isDirty();
+        if(dirtyTid != null) {
             DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
-            Database.getLogFile().logWrite(dirtyTId, node.page.getBeforeImage(), node.page);//日志系统向日志中写入一条update记录
+            Database.getLogFile().logWrite(dirtyTid, node.page.getBeforeImage(), node.page);//日志系统向日志中写入一条update记录
             Database.getLogFile().force();//确保在脏页刷新到磁盘之前日志记录先记录到磁盘中
             dbFile.writePage(node.page);
             node.page.markDirty(false, null);

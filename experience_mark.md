@@ -36,7 +36,7 @@ TupleDesc是表头那一行的描述信息，Tuple是每一行元组信息。
 
 ## ex5
 
-随机访问：RandomAccessFile或SeekableByteChannel 。**随机访问（Random Access）** 指的是能够直接跳转到文件中的任意位置进行读取或写入，而无需按顺序读取整个文件（seek()方法）。
+随机访问：RandomAccessFile或`FileChannel`。**随机访问（Random Access）** 指的是能够直接跳转到文件中的任意位置进行读取或写入，而无需按顺序读取整个文件（seek()方法）。
 
 iterator与HeapPage的iterator有关，根据页面大小不断换成新一页HeapPage的iterator，重写多个方法。
 
@@ -117,7 +117,7 @@ Aggregate判断一下Field类型，返回IntegerAggregator或StringAggretor即�
 
 每次fetch之后必然会榨干迭代器，所以应该保持一个变量，每次调用fetch的时候标记。
 
-## ex5
+## ex5 LRU缓存实现
 
 [LRU缓存实现](https://leetcode.cn/problems/lru-cache/)（双向链表），map的值改为LRUnode
 
@@ -127,11 +127,15 @@ flushPage应该将脏页写入磁盘并标记为不脏，同时将其留在Buffe
 
 基于成本的优化策略
 
-精确估计查询计划的成本非常困难，在本次实验，我们仅关注连接和基于表访问的成本，我们不关心访问方法的选择性(因为我们只有table scans一个访问方法)或额外操作的成本(例如聚合操作)
+精确估计查询计划的成本非常困难，在本次实验，我们仅需估算 **连接操作序列（joins）** 和 **基表访问（base table accesses，即表扫描）** 的成本，我们不关心访问方法的选择性(因为我们只有table scans一个访问方法)或额外操作的成本(例如聚合操作)
 
 **在这个实验中，你只需要考虑左深的计划。**
 
-## ex1
+`Join(Join(Table A, Table B), Table C)`  // 左深计划：每个Join的左子节点是单表或前一次Join结果。
+
+相较于更灵活的 **多枝计划（Bushy Plans，允许任意两个中间结果连接，如`Join(Join(A,B), Join(C,D))`）**，左深计划的搜索空间更小，更容易实现。
+
+## ex1 直方图统计
 
 直方图统计
 
@@ -188,7 +192,7 @@ joincost(t1 join t2) = scancost(t1) + ntups(t1) x scancost(t2) //IO cost
 
 **所以这也启示我们，建表时如果字段没有重复值要声明Unique，选择性的估计才好做**
 
-## ex4
+## ex4 动态规划
 
 已经实现了成本估计的方法，接下来将要对查询计划进行优化。(限定了只支持LeftDeepTree。)
 
@@ -234,7 +238,7 @@ TiDB 中使用的是 Join Reorder 算法[(图示)](https://blog.csdn.net/qq_4476
 
 + `computeCostAndCardOfSubplan`给出连接的子集joinSet，以及需要从集合中移除的连接joinToRemove，该方法计算将joinToRemove加入到joinSet-{joinToRemove}的最佳排序方式。它返回CostCard对象，该对象包含成本、基数和最佳的连接顺序(以列表形式返回)。
 
-​	如果无法找到最优的计划(例如，没有最左连接是可能的)，computeCostAndCardOfSubplan方法可能返回null，或者所有计划的成	本均大于bestCostSoFar参数。该方法通过参数planCache(先前以排序连接的缓存)来快速查找将将joinToRemove加入到joinSet-	{joinToRemove}的最快方法。
+​	如果无法找到最优的计划(例如，没有最左连接是可能的)，computeCostAndCardOfSubplan方法可能返回null，或者所有计划的成本均大于bestCostSoFar参数。该方法通过参数planCache(先前以排序连接的缓存)来快速查找将将joinToRemove加入到joinSet-{joinToRemove}的最快方法。
 
 + `computeCostAndCardOfSubplan`算法大概流程就是：
 
@@ -369,6 +373,8 @@ Thread.sleep(1);
 内部节点可以看成保存着一个个**BTreeEntry**，内部节点对key的查找、插入、删除、迭代，都是以entry为单位的。通过BTreeEntry可以获取key、LeftChild、RightChild这三种信息，然后存入相应数组中。
 
 叶节点和内部节点不一样的地方在于，其保存的是一个个真正的数据，也就是保存着一个个Tuple。还有就是其的链表结构用于顺序查找。
+
+模拟B+树网站：https://www.cs.usfca.edu/~galles/visualization/BPlusTree.html
 
 ## ex1
 

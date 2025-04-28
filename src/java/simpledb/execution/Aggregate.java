@@ -102,11 +102,17 @@ public class Aggregate extends Operator {
         child.open();
         Aggregator aggregator;
         if(child.getTupleDesc().getFieldType(aggregateFieldIdx) == Type.INT_TYPE) {
-            aggregator = new IntegerAggregator(groupFieldIdx, groupFieldIdx == Aggregator.NO_GROUPING ? null :
-                    child.getTupleDesc().getFieldType(groupFieldIdx), aggregateFieldIdx, aggOperator);
+            aggregator = new IntegerAggregator(
+                    groupFieldIdx,
+                    groupFieldIdx == Aggregator.NO_GROUPING ? null : child.getTupleDesc().getFieldType(groupFieldIdx),
+                    aggregateFieldIdx,
+                    aggOperator);
         } else {
-            aggregator = new StringAggregator(groupFieldIdx, groupFieldIdx == Aggregator.NO_GROUPING ? null :
-                    child.getTupleDesc().getFieldType(groupFieldIdx), aggregateFieldIdx, aggOperator);
+            aggregator = new StringAggregator(
+                    groupFieldIdx,
+                    groupFieldIdx == Aggregator.NO_GROUPING ? null : child.getTupleDesc().getFieldType(groupFieldIdx),
+                    aggregateFieldIdx,
+                    aggOperator);
         }
         while (child.hasNext()) {
             aggregator.mergeTupleIntoGroup(child.next());
